@@ -37,9 +37,10 @@
 
 ## 安装
 
-要求 Android 8.0（API 26）及以上。安装包发布在本仓库 [Releases](https://github.com/corqna-e/xmu_assistant_plus/releases)。
+要求 Android 8.0（API 26）及以上。
 
-- 首次安装直接安装 APK；从旧版（原项目调试签名）升级需先卸载原应用，本地数据不保留。
+- 安装包随仓库分发：[release/虾大助手Plus-1.0.apk](release/虾大助手Plus-1.0.apk)
+- 从旧版（原项目调试签名）升级需先卸载原应用，本地数据不保留。
 - 登录使用个人统一认证账号；签到提醒依赖前台服务，首次使用请按应用内使用指南授予通知权限并关闭电池优化。
 
 ## 从源码构建
@@ -54,7 +55,7 @@ cd xmu_assistant_plus/android
 - 也可用 Android Studio 打开 `android/` 目录直接构建
 - Release 签名口令通过 `android/local.properties` 注入（不进仓库），无配置时 release 构建会失败，debug 构建不受影响
 
-技术栈：Kotlin 1.9、Jetpack Compose、Material 3、OkHttp、WorkManager、AlarmManager；测试使用 JUnit、Robolectric 与 MockWebServer。
+技术栈：Kotlin 1.9、Jetpack Compose、Material 3、OkHttp、WorkManager、AlarmManager。
 
 ## 数据与隐私
 

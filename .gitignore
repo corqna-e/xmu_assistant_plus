@@ -10,6 +10,8 @@
 *.apk.bak
 *.apk
 *.aab
+# 发布包随仓库分发，只放行 release/ 下的安装包
+!release/*.apk
 
 # Release 签名密钥：绝不入库（debug.keystore 已入库仅供 debug 变体使用）
 *.jks

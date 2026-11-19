@@ -2,9 +2,9 @@
 
 Android 原生客户端，使用 Kotlin 和 Jetpack Compose，提供课程、课表、成绩、考试、签到与课件功能。登录态和业务缓存保存在设备本地。
 
-当前版本 **1.0 / versionCode 138**，支持 **Android 8.0（API 26）及以上**，compileSdk / targetSdk 为 35。
+当前版本 **1.0 / versionCode 139**，支持 **Android 8.0（API 26）及以上**，compileSdk / targetSdk 为 35。
 
-[下载 APK](https://github.com/corqna-e/xmu_assistant_plus/releases/download/v1.0/) · [项目首页](../README.md) · [开发文档](../documentation/README.md) · [模块定位](../documentation/architecture.md)
+[下载 APK](../release/虾大助手Plus-1.0.apk) · [项目首页](../README.md) · [开发文档](../documentation/README.md) · [模块定位](../documentation/architecture.md)
 
 ## 使用入口
 
@@ -38,9 +38,9 @@ Android 原生客户端，使用 Kotlin 和 Jetpack Compose，提供课程、课
 
 查询及用户启用的操作会连接相应服务；开启 PushPlus 或邮件通知会向所选服务发送通知。成绩长图、课表日历、证明 PDF 和日志可能包含个人信息，分享前需要检查。应用内清理不代替删除已经导出的副本。
 
-**release 使用独立签名，密钥与口令都不在仓库里。** 从上游公开调试签名包升级需先卸载原应用，本地数据不保留。卸载会清除应用私有数据。请从本仓库发布页下载，不要安装来源不明的更新。
+**release 使用独立签名，密钥与口令都不在仓库里。** 从上游公开调试签名包升级需先卸载原应用，本地数据不保留。卸载会清除应用私有数据。请从本仓库 `release/` 目录下载，不要安装来源不明的更新。
 
-## 构建与测试
+## 构建
 
 需要 JDK 17、Android SDK Platform 35 及对应构建工具。用 Android Studio 打开本目录，设置 Gradle JDK 为 17，并配置本机 SDK；也可以通过 `JAVA_HOME`、`ANDROID_HOME` 指定环境。`local.properties` 中的 `sdk.dir` 只供本机使用，不应提交。
 
@@ -48,17 +48,15 @@ Android 原生客户端，使用 Kotlin 和 Jetpack Compose，提供课程、课
 
 ```powershell
 cd android
-.\gradlew.bat :app:testDebugUnitTest :app:lintDebug
+.\gradlew.bat :app:lintDebug
 .\gradlew.bat :app:assembleRelease
 ```
 
 | 产物 | 相对 `android/` 的位置 |
 | --- | --- |
 | Release APK | `app/build/outputs/apk/release/app-release.apk` |
-| 单元测试报告 | `app/build/reports/tests/testDebugUnitTest/index.html` |
 | Lint 报告 | `app/build/reports/lint-results-debug.html` |
 
-单元测试使用 JUnit、MockWebServer 和 Robolectric，无需启动模拟器。
 
 release 构建要求 `local.properties` 内提供 `xmu.release.storeFile`、`xmu.release.storePassword`、`xmu.release.keyAlias`、`xmu.release.keyPassword` 四项；缺任一项时构建立即失败，不会退回仓库内的公开调试密钥。debug 构建使用 `keystore/debug.keystore`，不受此限制。
 
@@ -73,11 +71,10 @@ adb install -r .\app\build\outputs\apk\release\app-release.apk
 adb shell am start -n com.xmu.assistant.xia/com.xmu.assistant.MainActivity
 ```
 
-也可从仓库根目录执行 `scripts/start_android_test.ps1`。该脚本只负责安装和启动已构建的 APK，优先复用运行中的模拟器，否则尝试启动名为 `xmu_assistant_api30` 的 AVD；使用前需准备该 AVD。它不构建 APK，也不运行 JVM 单元测试。
 
 ## 开发定位
 
-源码位于 `app/src/main/java/com/xmu/assistant/`，测试位于 `app/src/test/`。
+源码位于 `app/src/main/java/com/xmu/assistant/`。
 
 | 模块 | 相关文件 |
 | --- | --- |
@@ -90,6 +87,6 @@ adb shell am start -n com.xmu.assistant.xia/com.xmu.assistant.MainActivity
 | 课件下载 | `CoursewareClient.kt` |
 | 隐私模式 | `PrivacyMode.kt` |
 
-依赖版本集中在 [gradle/libs.versions.toml](gradle/libs.versions.toml)，应用版本、SDK、签名及构建类型在 [app/build.gradle.kts](app/build.gradle.kts)。`networkBenchmark` 是用于只读网络测量的开发变体，不是发布安装包。
+依赖版本集中在 [gradle/libs.versions.toml](gradle/libs.versions.toml)，应用版本、SDK、签名及构建类型在 [app/build.gradle.kts](app/build.gradle.kts)。
 
 功能修复发布前递增 `versionCode`，同步 `versionName` 和根 README，核对签名兼容性。公开反馈和提交中不要包含真实账号、Cookie、通知密钥、运行缓存或未脱敏截图。

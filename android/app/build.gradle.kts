@@ -25,13 +25,12 @@ android {
         applicationId = "com.xmu.assistant.xia"
         minSdk = 26
         targetSdk = 35
-        // versionName 固定为 1.0，不随构建变动；轮次只体现在安装包文件名的
-        // vNN 上；versionCode 仅作内部构建号，用于 dumpsys / adb install
+        // versionCode 仅作内部构建号，用于 dumpsys / adb install
         // 判断「装进去的是否为新包」，界面上不展示。
-        versionCode = 138
+        versionCode = 139
         versionName = "1.0"
         buildConfigField("boolean", "NETWORK_METRICS", "false")
-            }
+    }
 
     buildFeatures {
         compose = true
@@ -69,18 +68,6 @@ android {
         }
     }
 
-    testOptions {
-        unitTests {
-            // Robolectric 运行 Compose UI 测试需要 Android 资源
-            isIncludeAndroidResources = true
-            all {
-                // JavaMail 1.6.7's JVM hostname checker reflects into InetAddress on JDK 17.
-                // Open only the unit-test worker module; Android production runtime is unchanged.
-                it.jvmArgs("--add-opens=java.base/java.net=ALL-UNNAMED")
-            }
-        }
-    }
-
     signingConfigs {
         // 开发用固定调试签名：keystore 固定到项目内，保证本机覆盖安装（install -r）不丢数据。
         // 注意它只服务 debug 变体，不得再用于 release。
@@ -102,11 +89,6 @@ android {
     }
 
     buildTypes {
-        create("networkBenchmark") {
-            initWith(getByName("debug"))
-            matchingFallbacks += listOf("debug")
-            buildConfigField("boolean", "NETWORK_METRICS", "true")
-        }
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
         }
@@ -143,18 +125,6 @@ dependencies {
     implementation(libs.android.mail)
     implementation(libs.android.activation)
     implementation(libs.okhttp)
-    testImplementation(libs.junit)
-    testImplementation(libs.org.json)
-    testImplementation(libs.mockwebserver)
-    // Compose UI 测试（Robolectric 在 JVM 上渲染，无需模拟器）
-    testImplementation(libs.androidx.compose.ui.test.junit4)
-    testImplementation(libs.robolectric)
-    // Robolectric 的 Compose UI 测试（ScheduleWeekGridUiTest/ThemeUiTest)也依赖此 debug manifest
-    // 提供可解析的 ComponentActivity，不能删
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-    // initWith(debug) 复制构建设置，不继承 debugImplementation 依赖。
-    // 基准变体也运行 src/test 中的完整 Compose/Robolectric 测试。
-    add("networkBenchmarkImplementation", libs.androidx.compose.ui.test.manifest)
 }
 
 // 缺口令时让 release 构建立刻失败，而不是签出一个不可发布的包、

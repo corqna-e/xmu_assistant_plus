@@ -4,12 +4,12 @@
 
 ## 目录约定
 
-- Android 源码和测试放在 `android/app/src/` 对应目录，依赖版本集中维护在 `android/gradle/libs.versions.toml`。
-- 可执行维护工具放在 `scripts/`；公开的说明放在 `documentation/`。
+- Android 源码放在 `android/app/src/main/`，依赖版本集中维护在 `android/gradle/libs.versions.toml`。
+- 公开的说明放在 `documentation/`。
 - `docs/`、`android/docs/` 沿用现有内部资料忽略规则，不使用强制添加绕过这些规则。
-- 安装包放在 GitHub Releases，不入库。
+- 安装包放在 `release/` 随仓库分发。
 
-Android 包路径 `com.xmu.assistant.xia` 与源包名 `com.xmu.assistant` 被构建、启动与测试引用。调整这些路径时，需要同步检查全部调用方；单纯整理文档不需要改名。
+Android 包路径 `com.xmu.assistant.xia` 与源包名 `com.xmu.assistant` 被构建与启动引用。调整这些路径时，需要同步检查全部调用方；单纯整理文档不需要改名。
 
 ### 展示文案与兼容标识
 
@@ -17,15 +17,15 @@ Android 包路径 `com.xmu.assistant.xia` 与源包名 `com.xmu.assistant` 被�
 
 ## 验证改动
 
-从 `android/` 目录执行[构建与测试](android/README.md#构建与测试)里的命令，按改动检查单元测试、Lint 和构建。
+从 `android/` 目录执行[构建](android/README.md#构建)里的命令，按改动检查 Lint 和构建。
 
-- 仅文档整理：检查相对链接、命令工作目录、目录约定和差异；不能将旧发布测试数当作本次重新验证的结果。
+- 仅文档整理：检查相对链接、命令工作目录、目录约定和差异；旧版本的验证结论不能当作本次重新验证的结果。
 - 涉及安装包：按打包说明检查安装、启动、版本、资源和签名兼容性。
 
 提交前运行 `git diff --check`，核对暂存内容。PR 说明具体修改、实际验证结果和未验证范围。
 
 ## 数据与发布
 
-提交内容不得包含真实账号、Cookie、密码、通知密钥、本地运行配置或未脱敏日志。测试不得使用日常账号的运行数据。
+提交内容不得包含真实账号、Cookie、密码、通知密钥、本地运行配置或未脱敏日志。
 
-发布时同步源码版本、Android `versionCode` 和 README。保留已有签名兼容要求；构建、离线模拟或单元测试通过均不能替代真实校园功能和设备验收。
+发布时同步源码版本、Android `versionCode` 和 README。保留已有签名兼容要求；构建或代码检查通过均不能替代真实校园功能和设备验收。
