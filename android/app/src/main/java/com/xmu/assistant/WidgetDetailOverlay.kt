@@ -14,7 +14,7 @@ import org.json.JSONObject
 /**
  *小组件「点一下弹二级界面」——**在组件内部绘制**，不启动任何 Activity / 界面。
  *
- * v82 曾用透明主题 Activity 承载这张卡片，用户明确否掉：那样会切应用、盖住桌面，
+ * 不用透明主题 Activity 承载这张卡片：那样会切应用、盖住桌面，
  * 本质仍是「打开 App」。现在改为 RemoteViews 覆盖层：
  *
  *1. 两个组件的主布局根都是 FrameLayout，第二层是一张默认 `gone` 的详情覆盖层；

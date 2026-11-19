@@ -32,7 +32,7 @@ package com.xmu.assistant
  *桌面小卡片服务进程读它，避免为读一个布尔加载加密库。
  *键：widget_logged_in（markLoginSucceeded 置 true；clearSession / clearLoggedOutUi
  *置 false，供周期 worker 复核是否允许教务 CAS 续登——登出后凭据残留，
- *不复核会幽灵登录）。widget_enabled 是 v57 前的总开关残留键，仅旧装存在，
+ *不复核会幽灵登录）。widget_enabled 是旧版总开关的残留键，仅旧装存在，
  *现已无人读写。
  *5. rollcall_seen 【明文】RollcallMonitorService：已通知签到去重持久化。
  *键：cookie（归属账号标识，换号失效判据）/ notified_ids_ordered /
@@ -59,15 +59,15 @@ package com.xmu.assistant
  * （markLoginSucceeded/clearSession/clearLoggedOutUi），不参与「清理」语义。
  * 本表仅固化对照关系防误删/漏删；清理实现改动须同步本段。
  *
- * ── 9 及以后：登记补充（长期漏登，v112 一次补齐，均与登出清理无关）─────────
+ * ── 9 及以后：登记补充（均与登出清理无关）─────────
  *9. schedule_week_widget 【明文】周课表小部件镜像（周课表组件渲染用）。
  *10. widget_course_detail 【明文】今日组件课程详情覆盖层的当前行。
  * 11. xmu_schedule_week_moves【明文】跨周搬课记录（ScheduleWeekMoveStore）。
  *12. courseware_storage 【明文】课件下载目录/进度等本地状态。
  *13. permission_audit 【明文】使用指南里「自启动已确认」的人工确认时间。
  *14. map_usage_guard 【明文】地图选点每日次数闸门（纯本地限额，不含位置）。
- *15. xmu_storage_flags 【明文】v112 Keystore 失效自愈的一次性提示标记。
- *16. diagnostics 【明文】v112 诊断环形缓冲（解析失败记录，不含凭据）。
+ *15. xmu_storage_flags 【明文】Keystore 失效自愈的一次性提示标记。
+ *16. diagnostics 【明文】诊断环形缓冲（解析失败记录，不含凭据）。
  */
 internal object PrefStores {
     /** 登记锚：登记表命中的文件名必须与实际 getSharedPreferences 一致（测试守护）。 */
@@ -86,7 +86,7 @@ internal object PrefStores {
         "courseware_storage",
         "permission_audit",
         "map_usage_guard",
-        // v112 新增：Keystore 失效自愈的重置痕迹（明文，加密存储不可用时也要能写）
+        // Keystore 失效自愈的重置痕迹（明文，加密存储不可用时也要能写）
         // 与诊断环形缓冲（解析失败记录，不含凭据）。
         "xmu_storage_flags",
         "diagnostics",

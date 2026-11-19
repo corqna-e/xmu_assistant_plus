@@ -96,15 +96,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- *v74 收起态步进 56dp → 46dp再收到 44dp。
+ *日程堆叠卡收起态步进 44dp。
  *只压缩「课名下方到下一张卡顶端」的空白，文字位置始终不动。
  * 几何账：
  *12dp 上内边距 + 24dp 课名行 + 8dp 下方空白 = 44dp。
- * 上方仍是 12dp（与 v43 平铺一致），下方 20dp → 10dp → 8dp，即下方卡片再上移 2dp。
+ * 上方 12dp，下方 8dp。
  * 收起态不再画结束时间那一行（见 AgendaCourseCard 的 showDetails），否则会切出半截 09:40。
  */
 private val AGENDA_STACK_STEP = 44.dp
-/**沿用 v43 平铺时「已上课程置灰」的 0.5 半透明度，但只作用在整摞合成后的一层上。 */
+/**「已上课程置灰」的 0.5 半透明度，只作用在整摞合成后的一层上。 */
 private const val AGENDA_STACK_ALPHA = 0.5f
 
 /**
@@ -901,7 +901,7 @@ internal fun SchedulePage(
         // 只在周课表且本周有课时出现：日程视图没有缩放，空态也不需要滑条。
         if (viewMode == ScheduleViewMode.WEEK && displayGroups.isNotEmpty()) {
             // 内容区底边就是底栏上沿，所以右下角只需让 10dp 就真的贴住右下角了；
-            // v22 那个 146dp 是给「整屏悬浮层」算的，用在内容区里等于把卡片抬到半空。
+            // 不能沿用悬浮控件那套 146dp 底距（那是给「整屏悬浮层」算的，用在内容区里等于把卡片抬到半空）。
             // 提示条是整屏覆盖层且通栏，出现时才临时上让（条高约 44dp + 8dp 间距）。
             val zoomBottom by animateDpAsState(
                 targetValue = if (toastVisible) 56.dp else 10.dp,
@@ -1299,7 +1299,7 @@ internal fun ScheduleGridCourseBlock(
             }
             PrivacyText(
                 // 格子里走 forGrid 分支 —— 只删「楼」字；无教室仍显示「无 / 教室信息」
-                // 两行（v70 恢复，只有桌面小组件才精简成「无」）。
+                // 两行（只有桌面小组件才精简成「无」）。
                 glueParentheses(scheduleLocationSummary(group, forGrid = true)),
                 style = scaled(MaterialTheme.typography.bodySmall),
                 fontWeight = FontWeight.Medium,
@@ -1360,7 +1360,7 @@ private fun ScheduleAgendaView(
     // 已上过的课不再平铺成一列，改成互相重叠的一摞。
     // 收起态里后面的卡只画「时间 / 课名 / 节次」顶部条带，不画地点与周次，
     // 露出的部分不会出现半截地点；整摞半透明但用离屏合成，遮挡关系仍然正确。
-    // 点击整摞展开成 v43 那样的正常平铺；展开状态只用 remember（不落 rememberSaveable），
+    // 点击整摞展开成正常平铺；展开状态只用 remember（不落 rememberSaveable），
     // 离开日程页 / 切到周课表再回来时组合被销毁，回来自动重新收起。
     val (stackGroups, restGroups) = if (selectedIsCurrent && selectedDay == todayWeekday) {
         dayGroups.partition { it.endTime < nowValue }
@@ -1486,15 +1486,15 @@ private fun AgendaCourseCard(
 }
 
 /**
- *已上过的课收成一摞，整块可点，点开后由外层改成 v43 那样的正常平铺。
- * v77 步进 46dp，v78 再收到 44dp；收起态条带只画一行「起始时间 / 课名 / 节次」。
+ *已上过的课收成一摞，整块可点，点开后由外层改成正常平铺。
+ * 收起态步进 44dp；条带只画一行「起始时间 / 课名 / 节次」。
  *
  * - 后面的卡 `showDetails = false`，只画「时间 / 课名 / 节次」顶部条带，不画结束时间、
  *地点与周次；露出的高度里根本不存在第二行文字，下半截由前一张卡完整遮住。
  *课名上方空白 12dp 保持不变、下方空白 8dp，文字位置不动。
  * - 半透明施加在「整摞合成后的一层」：卡在离屏缓冲里用不透明底色按先后绘制，后画的盖住
  *前画的，再把整层按 alpha 合成到页面。前卡半透明时透出的是页面背景，而不是它压住的
- *后卡内容；若把 alpha 逐张加在卡上，被压住的文字就会从前卡里透出来（v69 踩过的坑）。
+ *后卡内容；若把 alpha 逐张加在卡上，被压住的文字就会从前卡里透出来。
  * - 展开状态由外层用普通 remember 保存，离开日程页即销毁，回来自动收起。
  */
 @Composable
@@ -1524,7 +1524,7 @@ private fun AgendaPastCourseDeck(
 }
 
 /**
- *自写 Layout；v74 改为固定步进：第 i 张的顶部 = i * step。
+ *自写 Layout，固定步进：第 i 张的顶部 = i * step。
  * 后提交的卡片画在上层，底色不透明，因此完整遮住前一张被压住的部分。
  * 整摞的半透明由外层统一施加，不在这里逐张设 alpha。
  */

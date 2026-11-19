@@ -20,11 +20,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 
 /**
- * 隐私模式（v92 重做）：
+ * 隐私模式：
  *
  * 1. 屏幕顶部大标题（[BrandHeader] 的标题）在二三级页逐字换成随机字母，
  *字母个数等于原标题字数（「课表」→ 两个随机字母）；一级页不遮蔽，首页显示「首页」。
- *该行为可在规则弹窗里单独关闭（[PrivacyModeState.titleMasked]，v108）；
+ *该行为可在规则弹窗里单独关闭（[PrivacyModeState.titleMasked]）；
  * 2. 全 App 任意位置的敏感词按 [PRIVACY_SUBSTITUTIONS] 换词（签到 → 前导、成绩 → 乘积、
  *监控 → 查看、雷达 → 类沓、考试 → 测评、考场 → 地点、排名 → 座位、绩点 → 机电、课 → ？），
  *桌面小组件（RemoteViews）不在范围内；

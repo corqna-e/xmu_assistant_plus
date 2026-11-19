@@ -209,7 +209,7 @@ fun XmuMobileTheme(themeMode: String = THEME_MODE_SYSTEM, content: @Composable (
                 )
             }
         }
-        // v10 方案一：全局形状放大一级，让 M3 的 Button/Card/TextField/Chip/Dialog
+        // 全局形状放大一级，让 M3 的 Button/Card/TextField/Chip/Dialog
         // 与显式卡片（AppCardShape 18dp）落在同一套大圆角语言上。
         MaterialTheme(
             colorScheme = colorScheme,
@@ -311,7 +311,7 @@ fun BrandHeader(
     // 一级页（底栏四页）不做字母遮蔽，只有二三级页才换成随机字母。
     primaryPage: Boolean = false,
 ) {
-    // v10 方案一：顶部栏与内容卡片用同一套「大圆角 + 柔和阴影 + 无硬描边」语言。
+    // 顶部栏与内容卡片用同一套「大圆角 + 柔和阴影 + 无硬描边」语言。
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -498,7 +498,7 @@ fun RefreshStateBanner(
 }
 
 /**
- *v22 底部纵向账本。
+ *底部纵向账本。
  * 底栏 81dp（1dp 分隔线 + 80dp NavigationBar）+ 6dp 间隙 = 87dp → 提示条底距；
  * 提示条实测高约 48dp，再加 11dp 间隙 → 悬浮控件（下载键/缩放条）底距 146dp。
  */

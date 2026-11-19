@@ -920,7 +920,7 @@ fun XmuAssistantApp(
     //—— 每次进入客户端（冷启动 / 从后台回到前台）全量刷新一次，45 分钟节流 ——
     // 「进入客户端自动刷新所有界面数据，进入单页面就不自动刷新」。
     // 串行错峰 800ms：多模块同时发起 academic CAS 续登会打两个身份域。
-    // v12 修复「第一次登录不自动刷新」两处根因：
+    // 「第一次登录不自动刷新」的两处根因：
     //1) 旧节流用 SystemClock.elapsedRealtime，进程重启会归零，而 rememberSaveable
     //里存的是上个进程的大数 → now-last 为负 → 被误判成「刚刷过」，冷启动直接跳过；
     //2) 旧 LaunchedEffect 只在 loggedIn 变化时跑一次，那一刻往往仍在

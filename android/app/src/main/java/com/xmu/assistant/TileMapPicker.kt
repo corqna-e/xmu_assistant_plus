@@ -549,7 +549,7 @@ private fun Context.findHostActivity(): Activity? {
 }
 
 /**
- * 全屏选点对话框。窗口几何与底部 48dp 留白沿用 v28 已真机验证过的写法
+ * 全屏选点对话框。窗口几何与底部 48dp 留白按真机实际行为处理
  * （这台荣耀的 getRootWindowInsets 会返回 bottom=0，不能只靠系统 inset）。
  */
 @Composable

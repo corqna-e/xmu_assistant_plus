@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- *v10 方案一：统一卡片语言 —— 18dp 大圆角 + 极柔和阴影，取代 1dp 硬描边。
+ *统一卡片语言 —— 18dp 大圆角 + 极柔和阴影，取代 1dp 硬描边。
  * 卡片内的小块（指标、徽章）用 14dp 圆角且不加阴影，避免嵌套阴影显脏。
  */
 internal val AppCardShape = RoundedCornerShape(18.dp)
@@ -37,7 +37,7 @@ internal val AppInnerShape = RoundedCornerShape(14.dp)
 /**降到 1dp。 */
 internal val AppCardElevation: Dp = 1.dp
 
-/** Shared implementation of the approved v8 preview language. */
+/** Shared implementation of the preview card language. */
 @Composable
 internal fun PreviewCard(
     modifier: Modifier = Modifier,
@@ -57,7 +57,7 @@ internal fun PreviewCard(
             content = content,
         )
     }
-    // v11 修复「卡片整块显示异常」：soft 卡原先用半透明 surfaceVariant(.58f)，
+    // 「卡片整块显示异常」的修复：soft 卡原先用半透明 surfaceVariant(.58f)，
     // 叠加 shadowElevation 后阴影会透过半透明底色显出来，整块发灰/像黑块。
     // 改为不透明底色，并显式指定 contentColor，杜绝 contentColorFor 的异常推断。
     val cardColor = if (soft) MaterialTheme.colorScheme.surfaceVariant

@@ -27,7 +27,7 @@ app/src/test/resources/*.tmp
 # 若将来新增其它密钥文件，请单独显式忽略，勿用整目录忽略（避免新克隆无法构建）。
 # keystore/
 
-# v112：发布签名不进仓库。口令在 local.properties 的 xmu.release.* 四项，
+# 发布签名不进仓库。口令在 local.properties 的 xmu.release.* 四项，
 # 该口令文件本身也已被忽略。
 /keystore/release.keystore
 

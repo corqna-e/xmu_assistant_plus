@@ -354,8 +354,8 @@ internal fun TutorialPage(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // 压掉 TextButton 的垂直内边距与 48dp 最小触摸下限（v42 的
-                    // LocalMinimumInteractiveComponentSize 姿势），行的上下空白改由
+                    // 压掉 TextButton 的垂直内边距与 48dp 最小触摸下限
+                    // （LocalMinimumInteractiveComponentSize），行的上下空白改由
                     // 外层 top 16dp 与卡片底部留白（dp）控制。
                     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                         TextButton(
@@ -366,7 +366,7 @@ internal fun TutorialPage(
                     }
                     PrivacyText("上次检测 $checkedAtText", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                // v43 已删：不再显示「自启动已于 … 确认为允许 · 重新确认」记录行。
+                // 不显示「自启动已于 … 确认为允许 · 重新确认」记录行。
                 //撤销确认的唯一入口就是「重新检测」——重新检测本身就会作废确认，
                 // 两者功能重复，删掉这一行不损失任何能力。
             }
