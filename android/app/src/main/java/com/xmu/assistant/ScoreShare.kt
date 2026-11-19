@@ -118,7 +118,7 @@ fun renderScoreLongImage(
  * 保存成绩长图并返回可分享的 content uri。
  * - Android 10+（API>=29）：写入系统相册（MediaStore，无需权限）。
  * - Android 8-9（API 26-28）：写入应用私有目录 files/images/，经 FileProvider 分享
- *   （免 WRITE_EXTERNAL_STORAGE 运行时权限，避免旧系统上分享失败）。
+ *（免 WRITE_EXTERNAL_STORAGE 运行时权限，避免旧系统上分享失败）。
  */
 fun saveScoreImageToGallery(context: Context, bitmap: Bitmap): Uri? {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

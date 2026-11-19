@@ -33,6 +33,9 @@ internal object EndpointMemory {
     fun reset() = synchronized(lastGood) { lastGood.clear() }
 }
 
+/**断点残片保留时长；超过这个时间的 .part 在下次下载开始前清掉。 */
+private const val STALE_PARTIAL_MAX_AGE_MILLIS = 3L * 24 * 60 * 60 * 1000
+
 /**
  * 直链课件扩展名全集（与桌面端 courseware.DIRECT_URL_EXTENSIONS 16 种对齐）：
  * 下载分流（isDirectDownloadUrl）与页内「可直下」计数（isDirectCoursewareUrl）
@@ -95,7 +98,7 @@ class CoursewareClient private constructor(
             try {
                 // 课程端点 403 可能是资源级无权限，不立即判会话过期；
                 // 只有全部端点都失败且其中出现过真会话失效（401/登录页重定向）才续登，
-                // 避免单个端点权限问题误触发 CAS 登录（风控红线）。
+                // 避免单个端点权限问题误触发 CAS 登录。
                 val payload = getJson(
                     "$baseUrl$endpoint",
                     NetworkOperation.COURSES,
@@ -188,7 +191,7 @@ class CoursewareClient private constructor(
                 }
             }
         } catch (error: Throwable) {
-            // 体检报告 §6-OPT2：首个 future 失败即整批上抛，但此前已 submit 的其余任务
+            // 首个 future 失败即整批上抛，但此前已 submit 的其余任务
             // 仍会逐个对（可能已失效的）会话发请求——会话过期瞬间就是几十个必败请求的
             // 风暴 + 非守护线程滞留。shutdownNow 清空队列并中断在途任务。
             executor.shutdownNow()
@@ -198,7 +201,10 @@ class CoursewareClient private constructor(
         }
     }
 
-    fun download(item: CoursewareUiItem): String {
+    /**
+     *@param courseFolder 课程名+学期，公共下载目录内的子文件夹名；空串退回根目录（兼容测试与旧调用）。
+     */
+    fun download(item: CoursewareUiItem, courseFolder: String = ""): String {
         val directory = downloadDirectory
             ?: File(
                 // getExternalFilesDir 可返回 null（外部存储不可用）：File(null, child)
@@ -211,24 +217,26 @@ class CoursewareClient private constructor(
         return if (item.referenceId.isNotBlank()) {
             val signed = getJson("$baseUrl/api/uploads/reference/${item.referenceId}/url", NetworkOperation.COURSEWARE, forbiddenMeansSessionExpired = false) as? JSONObject
             val url = signed?.optRealString("url").orEmpty()
-            if (!url.startsWith("http")) error("平台未提供地址")
-            downloadUrl(url, directory, item.filename.ifBlank { item.title }, coursewareResourceIdentity(item))
+            if (!url.startsWith("http")) error(ErrorCodes.URL_MISSING)
+            downloadUrl(url, directory, item.filename.ifBlank { item.title }, coursewareResourceIdentity(item), courseFolder)
             COURSEWARE_STATUS_SUCCESS
         } else if (isDirectDownloadUrl(item.sourceUrl)) {
-            downloadUrl(item.sourceUrl, directory, item.filename.ifBlank { item.title }, coursewareResourceIdentity(item))
+            downloadUrl(item.sourceUrl, directory, item.filename.ifBlank { item.title }, coursewareResourceIdentity(item), courseFolder)
             COURSEWARE_STATUS_SUCCESS
         } else {
             val url = item.sourceUrl.ifBlank { "$baseUrl/course/${item.courseId}/learning-activity#/${item.activityId}" }
-            synchronized(FILE_ALLOCATION_LOCK) {
-                val target = availableFile(directory, "${item.title}.url")
-                target.writeText("[InternetShortcut]\nURL=$url\n", Charsets.UTF_8)
+            val target = synchronized(FILE_ALLOCATION_LOCK) {
+                val file = availableFile(directory, "${item.title}.url")
+                file.writeText("[InternetShortcut]\nURL=$url\n", Charsets.UTF_8)
+                file
             }
+            publishToStorage(target, courseFolder)
             COURSEWARE_STATUS_ENTRY_SAVED
         }
     }
 
     private fun itemsFromDetail(courseId: String, activity: JSONObject, detail: Any): List<CoursewareUiItem> {
-        val obj = detail as? JSONObject ?: return listOf(entryItem(courseId, activity, 0, "平台未提供地址"))
+        val obj = detail as? JSONObject ?: return listOf(entryItem(courseId, activity, 0, ErrorCodes.URL_MISSING))
         val uploads = obj.optJSONArray("uploads") ?: JSONArray()
         val activityId = firstString(activity, "id")
         val title = firstString(obj, "title", "name").ifBlank { firstString(activity, "title", "name").ifBlank { "未命名课件" } }
@@ -287,7 +295,7 @@ class CoursewareClient private constructor(
         )
     }
 
-    private fun downloadUrl(url: String, directory: File, filename: String, resourceIdentity: String): String {
+    private fun downloadUrl(url: String, directory: File, filename: String, resourceIdentity: String, courseFolder: String = ""): String {
         val (target, partial) = reserveDownloadFiles(directory, filename, resourceIdentity)
         return try {
             val headers = linkedMapOf(
@@ -295,7 +303,7 @@ class CoursewareClient private constructor(
                 "Accept-Language" to "zh-CN,zh;q=0.9",
             )
             // 只对平台同源域名带会话 Cookie；签名/CDN 直链（第三方主机）不携带，
-            // 避免把登录 cookie 外泄给无关服务器（安全红线）。
+            // 避免把登录 cookie 外泄给无关服务器。
             // 同源判定按 URL host 解析比对，不用字符串前缀：lnt.xmu.edu.cn.evil.com
             // 这类前缀伪装域也会 startsWith 命中，Cookie 会外泄给攻击者主机。
             if (cookieHeader.isNotBlank() && isSameOriginAsBaseUrl(url)) headers["Cookie"] = cookieHeader
@@ -315,17 +323,18 @@ class CoursewareClient private constructor(
             if (result.code != 200 && result.code != 206) error("平台未返回可下载文件（HTTP ${result.code}）")
             val contentType = result.contentType.lowercase()
             // The transport deliberately leaves HTML/JSON/XHTML challenge
-            // payloads out of the .part file.  Treat all of them as failures
+            //payloads out of the .part file. Treat all of them as failures
             // here too; otherwise an empty placeholder (or an old partial)
             // could be renamed as a successful download.
             if ("text/html" in contentType ||
                 "application/json" in contentType ||
                 "application/xhtml" in contentType
             ) {
-                error("网络失败")
+                error(ErrorCodes.NETWORK_FAILURE)
             }
             check(partial.renameTo(target)) { "课件文件保存失败" }
             DownloadResumeMetadata.sidecar(partial).delete()
+            publishToStorage(target, courseFolder)
             target.absolutePath
         } catch (error: Throwable) {
             // 保留 .part：已下载字节是断点续传的依据（传输层失败分支不写脏数据）；
@@ -335,6 +344,52 @@ class CoursewareClient private constructor(
             // 成功（已 rename）/失败（保留 .part 待续传）都释放进程内占位，
             // 让后续重试可复用同名断点
             releaseReservation(partial)
+        }
+    }
+
+    /**
+     *唯一落点 = 公共「下载/xmu助手课件」。
+     *
+     * v48 之前的逻辑是「有授权写授权目录、没授权写公共目录」，实机表现为同一次
+     * 下载的文件被劈成两处（授权文件夹一份、另一个新建的子文件夹一份），
+     * 用户根本找不到。而 Android 10 起写公共下载目录本就不需要任何授权，
+     * 也没有必要再让用户选目录：统一写公共目录，一处落点，无歧义。
+     *
+     * Android 8/9 写不了公共目录（系统要存储权限），此时文件留在中转目录
+     * （应用专属目录），界面上如实说明位置，不谎称已保存到公共下载目录。
+     */
+    private fun publishToStorage(file: File, courseFolder: String = "") {
+        val ctx = context ?: return
+        if (!CoursewareStorage.canWritePublicDownloads()) {
+            // 老系统：保留在中转目录（应用专属目录），由界面说明真实位置。
+            return
+        }
+        // 发布成功即删除中转文件（move 语义）。
+        // 旧实现只复制不删，每份课件都会在 Android/data/…/Download/xmu助手课件 里
+        // 留一份永久副本，实测单机累积到 1 GB。发布失败才保留，方便原地重试。
+        val published = CoursewareStorage.publishToPublicDownloads(ctx, file, courseFolder)
+        if (!published) throw java.io.IOException("保存到公共下载目录失败，文件未保存")
+        runCatching { file.delete() }
+    }
+
+    /**
+     *清理中断下载留下的断点残片（.part / .part.meta，默认 3 天前）。
+     * 断点续传需要保留刚才的 .part，但没续上的残片会一直堆着，实测单机堆到 72 MB。
+     * 只在新批次开始前调用，且只删「够旧」的文件，不会打断进行中的下载。
+     */
+    fun pruneStalePartials(maxAgeMillis: Long = STALE_PARTIAL_MAX_AGE_MILLIS) {
+        val directory = downloadDirectory ?: return
+        val cutoff = System.currentTimeMillis() - maxAgeMillis
+        runCatching {
+            directory.listFiles()?.forEach { candidate ->
+                val name = candidate.name
+                val isPartialArtifact = name.endsWith(".part") ||
+                    name.endsWith(".part.meta") ||
+                    name.endsWith(".part.meta.tmp")
+                if (isPartialArtifact && candidate.lastModified() < cutoff) {
+                    candidate.delete()
+                }
+            }
         }
     }
 
@@ -374,13 +429,13 @@ class CoursewareClient private constructor(
         if (response.code in 300..399 && isIdentityRedirect(response.url, response.location)) {
             throw MainSessionExpiredException()
         }
-        if (response.code !in 200..299) error("网络失败")
+        if (response.code !in 200..299) error(ErrorCodes.NETWORK_FAILURE)
         if (isKnownLoginForm(response.body)) throw MainSessionExpiredException()
         // 2xx 但非 JSON（空 body/HTML 错误页）：解析异常统一归为「网络失败」，
-        // 否则 JSONException 会从 download() 等无兜底调用点逃逸
+        //否则 JSONException 会从 download 等无兜底调用点逃逸
         return runCatching {
             if (response.body.trimStart().startsWith("[")) JSONArray(response.body) else JSONObject(response.body)
-        }.getOrElse { error("网络失败") }
+        }.getOrElse { error(ErrorCodes.NETWORK_FAILURE) }
     }
 
     private fun unwrapList(value: Any, vararg keys: String): List<Any> {

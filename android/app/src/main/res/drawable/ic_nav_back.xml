@@ -1,0 +1,13 @@
+<!-- 返回/撤回弯箭头：底部「更多」键在二级界面时的替代图标。
+     与其它导航图标一致用描边风格；Icon 的 tint 会覆盖颜色。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M8.5,13.5 L4,9 L8.5,4.5"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" android:strokeColor="#083B6F" />
+    <path android:pathData="M4,9 L14.5,9 A5.5,5.5 0 0 1 14.5,20 L8,20"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" android:strokeColor="#083B6F" />
+</vector>

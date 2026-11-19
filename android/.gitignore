@@ -23,6 +23,14 @@ captures/
 app/src/test/resources/*.tmp
 
 # 固定调试签名（android/keystore/debug.keystore）已入库：
-# 签名在仓库内可复现，保证 dev/release 覆盖升级（install -r）不丢本地登录数据。
+# 只服务 debug 变体，用于本机 install -r 迭代，仓库内可复现。
 # 若将来新增其它密钥文件，请单独显式忽略，勿用整目录忽略（避免新克隆无法构建）。
 # keystore/
+
+# v112：发布签名不进仓库。口令在 local.properties 的 xmu.release.* 四项，
+# 该口令文件本身也已被忽略。
+/keystore/release.keystore
+
+# 上传准备：死文件与日志不入库
+/app/libs/
+*.log

@@ -12,9 +12,9 @@ import java.security.MessageDigest
  * RFC 5545 关键取舍：
  * - 时间用浮动本地时间（DTSTART 不带 Z、不写 VTIMEZONE），导入端按本地时区解析；
  * - RFC 5545 没有「周次奇偶」概念，单双周完全靠 DTSTART 锚定正确奇偶周的首上课日
- *   + RRULE INTERVAL=2 展开（与周次校准日历 startDate 联动）；
+ *+ RRULE INTERVAL=2 展开（与周次校准日历 startDate 联动）；
  * - 断档周次（如 "1-8,10-16"）无法用单个 RRULE 表达：按极大等差段（步长 1/2）
- *   拆成多个 VEVENT，SUMMARY 相同、日期互补，避免把缺上的第 9 周错误包含进来；
+ *拆成多个 VEVENT，SUMMARY 相同、日期互补，避免把缺上的第 9 周错误包含进来；
  * - BYDAY 单天时 WKST 边界不构成影响（RFC 默认 WKST=MO），省略以减小体积。
  */
 

@@ -12,16 +12,16 @@ import java.util.concurrent.ExecutorService
  *
  * 链路拆瀑布：
  * 1. GET /api/profile 取平台内部 id，与课程列表并行准备——课程优先复用调用方
- *    已加载的 List<CourseSummary>（零重复请求），没有才经 CoursewareClient.fetchCourses 兜底；
+ *已加载的 List<CourseSummary>（零重复请求），没有才经 CoursewareClient.fetchCourses 兜底；
  * 2. 课程按 semesterCode 降序分学期批，批内 boundedParallelMap(≤4) 拉两个候选端点
- *    的签到列表；每批结束若可排序记录 ≥10（后续学期必然更旧）→ 早停，
- *    典型一个学期 5~8 个请求封顶；
+ *的签到列表；每批结束若可排序记录 ≥10（后续学期必然更旧）→ 早停，
+ *典型一个学期 5~8 个请求封顶；
  * 3. 选出最近 10 条后并发(≤4)拉 /api/rollcall/{id}/student_rollcalls 明细，
- *    按本人记录判定准确状态——绝不先显示聚合状态（用户拍板：必须准确）。
+ *按本人记录判定准确状态——绝不先显示聚合状态。
  *
  * 会话语义照抄 CoursewareClient.getJson：401/身份域 302 → MainSessionExpiredException；
  * 账号级 profile 的 403 也表示会话失效，课程/明细的 403 则按资源级失败处理
- * （不触发续登，风控红线）。全部只读 GET。
+ *。全部只读 GET。
  */
 internal class RollcallHistoryClient internal constructor(
     private val cookieHeader: String,
@@ -136,7 +136,7 @@ internal class RollcallHistoryClient internal constructor(
         val rows = unwrapList(payload, "rollcalls", "activities", "data", "items", "list", "results")
         return rows.mapNotNull { raw ->
             val item = raw as? JSONObject ?: return@mapNotNull null
-            // id 用 optRealString：显式 null/字面量 "null" 一律归缺失（体检 P1-5 词表）；
+            // id 用 optRealString：显式 null/字面量 "null" 一律归缺失；
             // 无 id 无法查本人明细，整条跳过
             val id = item.optRealString("rollcall_id").ifBlank { item.optRealString("id") }
             if (id.isBlank()) return@mapNotNull null
@@ -224,11 +224,11 @@ internal class RollcallHistoryClient internal constructor(
         if (response.code in 300..399 && isIdentityRedirect(response.url, response.location)) {
             throw MainSessionExpiredException()
         }
-        if (response.code !in 200..299) error("网络失败")
+        if (response.code !in 200..299) error(ErrorCodes.NETWORK_FAILURE)
         if (isKnownLoginForm(response.body)) throw MainSessionExpiredException()
         return runCatching {
             if (response.body.trimStart().startsWith("[")) JSONArray(response.body) else JSONObject(response.body)
-        }.getOrElse { error("网络失败") }
+        }.getOrElse { error(ErrorCodes.NETWORK_FAILURE) }
     }
 
     private fun unwrapList(value: Any, vararg keys: String): List<Any> {
@@ -367,7 +367,7 @@ internal fun historyRollcallStatus(raw: String): String {
 }
 internal const val ROLLCALL_HISTORY_LIMIT = 10
 
-/** 历史区块后台重校的新鲜窗口（用户拍板保持 5 分钟；成绩窗亦已放宽为 5 分钟）。 */
+/**历史区块后台重校的新鲜窗口。 */
 internal const val ROLLCALL_HISTORY_FRESHNESS_MILLIS = 300_000L
 
 // ---------------------------------------------------------------------------

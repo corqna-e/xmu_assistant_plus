@@ -14,13 +14,14 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -41,9 +42,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -88,7 +90,7 @@ fun monitorStatusText(running: Boolean, failures: Int): String = when {
 }
 
 /** 时间戳格式化（HH:mm:ss，首页/各页"上次更新"用）。
- *  DateTimeFormatter 线程安全可做单例（SimpleDateFormat 每次新建有分配开销且非线程安全）。 */
+ *DateTimeFormatter 线程安全可做单例（SimpleDateFormat 每次新建有分配开销且非线程安全）。 */
 private val monitorTimeFormatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
 
 fun formatMonitorTime(millis: Long): String {
@@ -98,10 +100,20 @@ fun formatMonitorTime(millis: Long): String {
     )
 }
 
+/** 完整刷新时间戳（M月d日HH时mm分ss秒）：课表页底部「上次刷新」用。 */
+private val refreshTimeFormatter = java.time.format.DateTimeFormatter.ofPattern("M月d日HH时mm分ss秒")
+
+fun formatRefreshTimestamp(millis: Long): String {
+    if (millis <= 0L) return "-"
+    return refreshTimeFormatter.format(
+        java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault()),
+    )
+}
+
 /** 发送本机测试通知。 */
 fun sendLocalTestNotification(activity: ComponentActivity) {
     val manager = activity.getSystemService(NotificationManager::class.java)
-    manager.createNotificationChannel(NotificationChannel("xmu_assistant_test", "虾大助手通知测试", NotificationManager.IMPORTANCE_DEFAULT))
+    manager.createNotificationChannel(NotificationChannel("xmu_assistant_test", "虾大助手Plus通知测试", NotificationManager.IMPORTANCE_DEFAULT))
     val pendingIntent = PendingIntent.getActivity(
         activity,
         2001,
@@ -111,7 +123,7 @@ fun sendLocalTestNotification(activity: ComponentActivity) {
     manager.notify(
         2001,
         Notification.Builder(activity, "xmu_assistant_test")
-            .setContentTitle("虾大助手 测试通知")
+            .setContentTitle("虾大助手Plus 测试通知")
             .setContentText("如果你收到这条消息，说明本机通知可用。")
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
@@ -122,7 +134,7 @@ fun sendLocalTestNotification(activity: ComponentActivity) {
 
 /**
  * 当前是否深色（由 XmuMobileTheme 按 themeMode 决定：跟随系统 / 强制浅色 / 强制深色）。
- * 所有 theme* 变体函数读取它而不是直接读 isSystemInDarkTheme()，
+ *所有 theme* 变体函数读取它而不是直接读 isSystemInDarkTheme，
  * 这样用户手动选择主题后，课表格子/功能底色/警示色等全部跟随。
  */
 internal val LocalXmuDarkTheme = androidx.compose.runtime.staticCompositionLocalOf { false }
@@ -135,159 +147,225 @@ fun XmuMobileTheme(themeMode: String = THEME_MODE_SYSTEM, content: @Composable (
         THEME_MODE_DARK -> true
         else -> systemDark
     }
-    androidx.compose.runtime.CompositionLocalProvider(LocalXmuDarkTheme provides dark) {
+    // 隐私模式与深色开关同层下发，整棵树里的 PrivacyText / BrandHeader 即时生效。
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalXmuDarkTheme provides dark,
+        LocalPrivacyMode provides PrivacyModeState.enabled,
+    ) {
         // 体检报告 P1-7：色板必须 remember(dark)。M3 Colors 不覆写 equals，
         // 内联构造会让每次重组都产生新实例 → CompositionLocal 判定变化 →
         // 所有读取 colorScheme 的组件全量重组（登录页每敲一个字符即重跑整棵树）。
+        // 整体色板由低饱和灰蓝换成「白卡片 + 极浅蓝白背景 + 中等明度学院蓝」。
+        // 主色刻意控制在 #3369B0 一带（不是高饱和亮蓝），避免刺眼，同时与蓝色 logo 协调。
+        // 深色模式同步对齐新色系，不再出现灰闷的蓝灰块。
         val colorScheme = remember(dark) {
             if (dark) {
                 darkColorScheme(
-                    primary = Color(0xFF8FAEC8),
-                    secondary = Color(0xFFA8C1D4),
-                    surface = Color(0xFF17232D),
-                    surfaceVariant = Color(0xFF223542),
-                    onPrimary = Color(0xFF14212A),
-                    onSurface = Color(0xFFEBF2F6),
-                    onSurfaceVariant = Color(0xFF9BAAB5),
-                    background = Color(0xFF111A22),
-                    onBackground = Color(0xFFEBF2F6),
-                    outline = Color(0xFF8FA1AE),
-                    outlineVariant = Color(0xFF2C3C49),
+                    primary = Color(0xFF9CBEE8),
+                    onPrimary = Color(0xFF0B2240),
+                    primaryContainer = Color(0xFF1E3F65),
+                    onPrimaryContainer = Color(0xFFDCEBFA),
+                    secondary = Color(0xFF8FB2D6),
+                    onSecondary = Color(0xFF0B2240),
+                    secondaryContainer = Color(0xFF253C57),
+                    onSecondaryContainer = Color(0xFFDCEBFA),
+                    surface = Color(0xFF16212E),
+                    onSurface = Color(0xFFEDF3FB),
+                    surfaceVariant = Color(0xFF25364A),
+                    onSurfaceVariant = Color(0xFFA7B8CC),
+                    surfaceTint = Color(0xFF9CBEE8),
+                    background = Color(0xFF0E1621),
+                    onBackground = Color(0xFFEDF3FB),
+                    outline = Color(0xFF7E93AC),
+                    outlineVariant = Color(0xFF2A3A4E),
+                    error = Color(0xFFFF8A80),
+                    onError = Color(0xFF1A0A0A),
+                    errorContainer = Color(0xFF3A2020),
+                    onErrorContainer = Color(0xFFFFDAD6),
                 )
             } else {
                 lightColorScheme(
-                    primary = Color(0xFF6683A0),
-                    secondary = Color(0xFF7D95AD),
-                    surface = Color(0xFFDEE4E7),
-                    surfaceVariant = Color(0xFFC4D2DB),
+                    primary = Color(0xFF3369B0),
                     onPrimary = Color.White,
-                    onSurface = Color(0xFF293C4C),
-                    onSurfaceVariant = Color(0xFF637583),
-                    background = Color(0xFFCAD5DC),
-                    onBackground = Color(0xFF293C4C),
-                    outline = Color(0xFF607583),
-                    outlineVariant = Color(0xFFB0BEC7),
+                    primaryContainer = Color(0xFFE3EDFA),
+                    onPrimaryContainer = Color(0xFF173A68),
+                    secondary = Color(0xFF5B86B8),
+                    onSecondary = Color.White,
+                    secondaryContainer = Color(0xFFEAF2FB),
+                    onSecondaryContainer = Color(0xFF1C3F6B),
+                    surface = Color(0xFFFFFFFF),
+                    onSurface = Color(0xFF16283F),
+                    surfaceVariant = Color(0xFFEFF4FA),
+                    onSurfaceVariant = Color(0xFF5E7189),
+                    surfaceTint = Color(0xFF3369B0),
+                    background = Color(0xFFF5F8FC),
+                    onBackground = Color(0xFF16283F),
+                    outline = Color(0xFF9AAEC4),
+                    outlineVariant = Color(0xFFE4EBF4),
+                    error = Color(0xFFC6382B),
+                    onError = Color.White,
+                    errorContainer = Color(0xFFFFECEC),
+                    onErrorContainer = Color(0xFF7A1A12),
                 )
             }
         }
+        // v10 方案一：全局形状放大一级，让 M3 的 Button/Card/TextField/Chip/Dialog
+        // 与显式卡片（AppCardShape 18dp）落在同一套大圆角语言上。
         MaterialTheme(
             colorScheme = colorScheme,
+            shapes = Shapes(
+                extraSmall = RoundedCornerShape(8.dp),
+                small = RoundedCornerShape(12.dp),
+                medium = RoundedCornerShape(16.dp),
+                large = RoundedCornerShape(20.dp),
+                extraLarge = RoundedCornerShape(28.dp),
+            ),
             content = content,
         )
     }
 }
 
-internal val AppPrimary = Color(0xFF4B6884)
+internal val AppPrimary = Color(0xFF3369B0)
 internal val AppHeaderBrush = Brush.linearGradient(
-    listOf(Color(0xFF657F9A), Color(0xFF7D95AD)),
+    listOf(Color(0xFF2F609F), Color(0xFF4E83BE)),
 )
-internal val AppSuccess = Color(0xFF6D8C80)
+internal val AppSuccess = Color(0xFF2E8B6B)
 
 /** 深色模式下把浅色功能底换成深色变体，避免深色界面出现刺眼亮块。 */
 @Composable
 internal fun themeSoftGreen(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF1D332B) else Color(0xFFD2DED8)
+    if (LocalXmuDarkTheme.current) Color(0xFF173329) else Color(0xFFE3F2EA)
 
 /** 未登录/警示底色：深色模式换深红变体，避免深色界面出现刺眼亮块。 */
 @Composable
 internal fun themeSoftRed(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF3A2020) else Color(0xFFFFEEEE)
+    if (LocalXmuDarkTheme.current) Color(0xFF3A2020) else Color(0xFFFFECEC)
 
 /** 品牌角标（XMU）底色：深色模式换深琥珀变体，避免刺眼亮块。 */
 @Composable
 internal fun themeSoftAmber(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF362B22) else Color(0xFFE3D8CE)
+    if (LocalXmuDarkTheme.current) Color(0xFF362B22) else Color(0xFFFFF3E2)
 
 /** 品牌角标（XMU）文字色：深色下用更亮的琥珀保证深底可读。 */
 @Composable
 internal fun themeOnAmber(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFFDDB68E) else Color(0xFF7F5F48)
+    if (LocalXmuDarkTheme.current) Color(0xFFE0B886) else Color(0xFF8A6220)
 
 @Composable
 internal fun themeSurface(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF17232D) else Color(0xFFDEE4E7)
+    if (LocalXmuDarkTheme.current) Color(0xFF16212E) else Color(0xFFFFFFFF)
 
 @Composable
 internal fun themePrimarySoft(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF223542) else Color(0xFFC4D2DB)
+    if (LocalXmuDarkTheme.current) Color(0xFF1E3F65) else Color(0xFFE7F0FB)
 
 /** 警示文字色：深色模式下用更亮的红，保证深底上的可读性。 */
 @Composable
 internal fun themeWarning(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFFFF8A80) else Color(0xFFC62828)
+    if (LocalXmuDarkTheme.current) Color(0xFFFF8A80) else Color(0xFFC6382B)
 
 /** 成功文字色：深色模式下用更亮的绿，保证深底上的可读性。 */
 @Composable
 internal fun themeSuccess(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF9FC8B9) else Color(0xFF58776C)
+    if (LocalXmuDarkTheme.current) Color(0xFF8FD2B6) else Color(0xFF257A5E)
 
-/** 顶部标签选中底色：深色模式下用浅蓝（AppPrimary 深海军蓝在深底上区分度不足）。 */
+/** 顶部标签选中底色：深色模式下用稍亮的蓝，保证深底上的区分度。 */
 @Composable
 internal fun themeSelectedTab(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF456B86) else AppPrimary
+    if (LocalXmuDarkTheme.current) Color(0xFF3F6FA6) else AppPrimary
 
 /** 课表/日程选中的 chip 底色：与 themeSelectedTab 同源，深色下用浅蓝区分深底。 */
 @Composable
 internal fun themeSelectedChip(): Color = themeSelectedTab()
 
-/** 主色文字变体：深色模式下用浅蓝，避免深海军蓝 AppPrimary 在深底上不可读。 */
+/** 主色文字变体：深色模式下用浅蓝，避免学院蓝 AppPrimary 在深底上不可读。 */
 @Composable
 internal fun themePrimary(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF8FAEC8) else Color(0xFF4B6884)
+    if (LocalXmuDarkTheme.current) Color(0xFF9CBEE8) else Color(0xFF3369B0)
+
+/**底栏选中态用的加深主色 —— 与未选中灰形成更明确的选择态。 */
+@Composable
+internal fun themePrimaryDeep(): Color =
+    if (LocalXmuDarkTheme.current) Color(0xFF7FA9DB) else Color(0xFF23508C)
 
 @Composable
 internal fun themeTodayColumn(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF223441) else Color(0xFFE3EDF2)
+    if (LocalXmuDarkTheme.current) Color(0xFF1C3550) else Color(0xFFEDF4FC)
 
 @Composable
 internal fun themeInfoCard(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF1B2B36) else Color(0xFFF2F6F8)
+    if (LocalXmuDarkTheme.current) Color(0xFF172B3E) else Color(0xFFF4F8FD)
 
 @Composable
 internal fun themeFailedCard(): Color =
-    if (LocalXmuDarkTheme.current) Color(0xFF3A2323) else Color(0xFFFFEDEA)
+    if (LocalXmuDarkTheme.current) Color(0xFF3A2323) else Color(0xFFFFF1EF)
 
 @Composable
 fun BrandHeader(
     loggedIn: Boolean,
-    page: String = "首页",
+    page: Page = Page.HOME,
+    /** 标题特例（如「高数 · 课程坐标」）：非空时优先于 [page] 推导出的标题。 */
+    titleOverride: String? = null,
     showBack: Boolean = false,
     onBack: () -> Unit = {},
+    // 一级页（底栏四页）不做字母遮蔽，只有二三级页才换成随机字母。
+    primaryPage: Boolean = false,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 2.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    // v10 方案一：顶部栏与内容卡片用同一套「大圆角 + 柔和阴影 + 无硬描边」语言。
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shape = AppCardShape,
+        shadowElevation = AppCardElevation,
+        tonalElevation = 0.dp,
     ) {
-        if (showBack) {
-            Surface(onClick = onBack, color = themePrimarySoft(), shape = RoundedCornerShape(10.dp)) {
-                Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
-                    Text("‹", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                }
-            }
-        } else {
-            AppLogo(Modifier.size(34.dp), null)
-        }
-        Spacer(Modifier.width(12.dp))
-        Text(
-            if (page == "首页") "虾大助手" else page,
-            modifier = Modifier.weight(1f),
-            color = themePrimary(),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-        )
-        Surface(
-            color = if (loggedIn) themeSoftGreen() else themeSoftRed(),
-            shape = RoundedCornerShape(10.dp),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 13.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                if (loggedIn) "已登录" else "未登录",
-                color = if (loggedIn) themeSuccess() else themeWarning(),
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.labelMedium,
+            if (showBack) {
+                Surface(onClick = onBack, color = themePrimarySoft(), shape = androidx.compose.foundation.shape.CircleShape) {
+                    Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                        PrivacyText("‹", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else {
+                AppLogo(Modifier.size(34.dp), null)
+            }
+            Spacer(Modifier.width(12.dp))
+            // 一级页标题保持可读（首页在隐私模式下显示「首页」），只有下级页逐字换随机字母。
+            val privacy = LocalPrivacyMode.current
+            val rawTitle = titleOverride ?: if (page == Page.HOME) "厦大助手" else pageTitle(page)
+            val shownTitle = when {
+                privacy && page == Page.HOME -> "首页"
+                privacy && !primaryPage -> privacyTitle(rawTitle, true)
+                else -> rawTitle
+            }
+            PrivacyText(
+                //标题走 pageTitle，与底栏／更多页入口名保持一致
+                // （此前底栏已改「设置」，顶部却仍显示内部页面 id「策略」）。
+                shownTitle,
+                modifier = Modifier.weight(1f),
+                color = themePrimary(),
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
+                // 一级页标题用于定位当前页，与底栏一致保留「课」字（否则「？表」认不出）。
+                skipRules = if (primaryPage) setOf("课") else emptySet(),
             )
+            Surface(
+                color = if (loggedIn) themeSoftGreen() else themeSoftRed(),
+                shape = RoundedCornerShape(999.dp),
+            ) {
+                PrivacyText(
+                    if (loggedIn) "已登录" else "未登录",
+                    color = if (loggedIn) themeSuccess() else themeWarning(),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }
@@ -356,19 +434,29 @@ fun StatusRow(label: String, value: String) {
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.35f))
+        PrivacyText(label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.35f))
         Spacer(Modifier.width(12.dp))
-        Text(value, modifier = Modifier.weight(0.65f), fontWeight = FontWeight.Bold,
+        PrivacyText(value, modifier = Modifier.weight(0.65f), fontWeight = FontWeight.Bold,
             textAlign = androidx.compose.ui.text.style.TextAlign.End, maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-fun RefreshStateBanner(loading: Boolean, errorMessage: String, hasData: Boolean) {
+fun RefreshStateBanner(
+    loading: Boolean,
+    errorMessage: String,
+    hasData: Boolean,
+    /**失败时在右侧给「重试」，调用方传入本页自己的刷新动作；为 null 则只显示文案。 */
+    onRetry: (() -> Unit)? = null,
+    /**重试按钮的文案（首页监控用「重新检测」，其余用「重试」）。 */
+    retryLabel: String = "重试",
+    /**允许把这条失败提示收起来（首页常驻红条太吵）。 */
+    onDismiss: (() -> Unit)? = null,
+) {
     when {
         loading -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Text("正在刷新…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PrivacyText("正在刷新…", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         errorMessage.isNotBlank() -> Surface(
@@ -376,14 +464,46 @@ fun RefreshStateBanner(loading: Boolean, errorMessage: String, hasData: Boolean)
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(
-                refreshStateText(errorMessage, hasData),
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 4.dp, top = 3.dp, bottom = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PrivacyText(
+                    refreshStateText(errorMessage, hasData, withRetryHint = onRetry != null),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f).padding(vertical = 6.dp),
+                )
+                if (onRetry != null) {
+                    TextButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                        PrivacyText(
+                            retryLabel,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                if (onDismiss != null) {
+                    TextButton(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                        PrivacyText(
+                            "关闭",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
+            }
         }
     }
 }
+
+/**
+ *v22 底部纵向账本。
+ * 底栏 81dp（1dp 分隔线 + 80dp NavigationBar）+ 6dp 间隙 = 87dp → 提示条底距；
+ * 提示条实测高约 48dp，再加 11dp 间隙 → 悬浮控件（下载键/缩放条）底距 146dp。
+ */
+internal val ToastBottomInset = 87.dp
+internal val FloatingControlBottomInset = 146.dp
 
 @Composable
 fun ToggleRow(label: String, checked: Boolean, onChanged: (Boolean) -> Unit) {
@@ -396,22 +516,22 @@ fun ToggleRow(label: String, checked: Boolean, onChanged: (Boolean) -> Unit) {
     ) {
         Switch(checked = checked, onCheckedChange = onChanged)
         Spacer(Modifier.width(10.dp))
-        Text(label, fontWeight = FontWeight.Bold)
+        PrivacyText(label, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 fun SectionCard(title: String, showTitle: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
     val surface = MaterialTheme.colorScheme.surface
-    val line = MaterialTheme.colorScheme.outlineVariant
+    // 去硬描边，改大圆角 + 柔和阴影（与 PreviewCard 同一套语言）。
     Card(
         colors = CardDefaults.cardColors(containerColor = surface),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, line),
+        shape = AppCardShape,
+        elevation = CardDefaults.cardElevation(defaultElevation = AppCardElevation),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (showTitle) Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (showTitle) PrivacyText(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             content()
         }
     }
@@ -425,8 +545,7 @@ fun InfoCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = container),
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f)),
+        shape = AppInnerShape,
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -446,8 +565,8 @@ fun EmptyState(title: String, body: String) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             AppLogo(Modifier.size(64.dp), null)
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
+            PrivacyText(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            PrivacyText(
                 body,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -457,27 +576,62 @@ fun EmptyState(title: String, body: String) {
 }
 
 /**
- * 瞬时提示级别（B4 显式化）：show() 默认 INFO；showWarning/showError 显式标注，
+ *瞬时提示级别（B4 显式化）：show 默认 INFO；showWarning/showError 显式标注，
  * 文案子串匹配（"失败"/"请先"）仅作未迁移调用点的兜底，保留不删。
  * WARNING/ERROR 共用 errorContainer 视觉（历史 warning 二态样式不变）。
  */
-enum class ToastSeverity { INFO, WARNING, ERROR }
+enum class ToastSeverity { INFO, WARNING, ERROR, SUCCESS }
 
 @Composable
 fun ToastBar(message: String, severity: ToastSeverity) {
-    val warning = severity != ToastSeverity.INFO
+    // 成功提示单独走绿色（原来只有深底/红底两态，成功文案里带「失败 0」也被染红）。
+    val success = severity == ToastSeverity.SUCCESS
+    val warning = severity == ToastSeverity.WARNING || severity == ToastSeverity.ERROR
+    // 改成满宽深色条 + 高阴影 —— 旧版半屏浅灰条在浅蓝白页面上几乎看不见，
+    // 而且只占左侧一半显得很滑稽。位置由调用方摆在悬浮键上方，两者互不遮挡。
     Surface(
-        color = if (warning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(12.dp),
+        color = when {
+            success -> AppSuccess
+            warning -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.inverseSurface
+        },
+        contentColor = when {
+            success -> Color.White
+            warning -> MaterialTheme.colorScheme.onError
+            else -> MaterialTheme.colorScheme.inverseOnSurface
+        },
+        shape = RoundedCornerShape(14.dp),
+        shadowElevation = 10.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(
-            text = message,
-            // 非警告的中性提示用中灰（勿用绿色成功色误导：'正在刷新成绩'等不是成功）
-            color = if (warning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            fontWeight = FontWeight.Bold,
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (warning || success) {
+                Surface(
+                    color = (if (success) Color.White else MaterialTheme.colorScheme.onError).copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(999.dp),
+                    modifier = Modifier.size(20.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        PrivacyText(
+                            if (success) "✓" else "!",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+            // 中性提示用深底浅字（inverseSurface），不再用中灰撞在浅色卡上。
+            PrivacyText(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -517,7 +671,7 @@ fun ScoreSimulationSummaryPanel(current: XmuScoreSummary, simulated: XmuScoreSum
             SimulationDeltaMetric("平均分数", current.averageScore, simulated.averageScore, "sim-avg-score", Modifier.weight(1f))
             SimulationDeltaMetric("加权分数", current.weightedScore, simulated.weightedScore, "sim-weighted-score", Modifier.weight(1f))
         }
-        Text(
+        PrivacyText(
             "箭头左侧为当前成绩，右侧为计入模拟课程后的结果；模拟课不计入已修总学分。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -534,26 +688,26 @@ private fun SimulationDeltaMetric(
     afterTag: String,
     modifier: Modifier = Modifier,
 ) {
+    // 卡片内的小指标块去描边，靠白底与浅蓝面板的对比分层，不加嵌套阴影。
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = AppInnerShape,
         modifier = modifier.height(68.dp),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+            PrivacyText(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
+                PrivacyText(
                     scoreMetricText(before),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
-                Text("→", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
+                PrivacyText("→", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PrivacyText(
                     scoreMetricText(after),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
@@ -581,30 +735,38 @@ private fun ScoreSummaryPanelSurface(content: @Composable ColumnScope.() -> Unit
 fun ScoreMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = AppInnerShape,
         modifier = modifier.height(68.dp),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+            PrivacyText(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+            PrivacyText(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
         }
     }
 }
 
 @Composable
-fun TermHeader(term: String, count: Int) {
+fun TermHeader(term: String, count: Int, expanded: Boolean = true, onToggle: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (onToggle != null) Modifier.clickable(onClick = onToggle) else Modifier)
             .padding(top = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(term, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        Text("${count} 门", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+        PrivacyText(term, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        PrivacyText("${count} 门", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+        // 折叠指示符：与课件页 ▸/▾ 一致；onToggle 为 null（不可折叠）时不显示
+        if (onToggle != null) {
+            PrivacyText(
+                if (expanded) "▾" else "▸",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
     }
 }
 
@@ -612,14 +774,18 @@ fun TermHeader(term: String, count: Int) {
 fun ScoreRecordCard(record: XmuScoreRecord) {
     PreviewCard {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            Surface(color = if ((record.score ?: 0.0) >= 90.0) themeSoftGreen() else themePrimarySoft(), shape = RoundedCornerShape(11.dp)) {
-                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                    Text(record.score?.let(::scoreMetricText) ?: scoreResultText(record), fontWeight = FontWeight.Bold, color = if ((record.score ?: 0.0) >= 90.0) themeSuccess() else themePrimary())
+            Surface(color = if (scoreIsExcellent(record)) themeSoftGreen() else themePrimarySoft(), shape = RoundedCornerShape(11.dp)) {
+                // 徽章随内容自适应：等级制「优秀」「A-」等不会在固定 48dp 方框里被挤压。
+                Box(
+                    Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    PrivacyText(record.score?.let(::scoreMetricText) ?: scoreResultText(record), fontWeight = FontWeight.Bold, color = if (scoreIsExcellent(record)) themeSuccess() else themePrimary())
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text(record.courseName, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(
+                PrivacyText(record.courseName, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                PrivacyText(
                     "${scoreMetricText(record.credit)} 学分 · 绩点 ${scoreMetricText(record.gradePoint)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -629,23 +795,38 @@ fun ScoreRecordCard(record: XmuScoreRecord) {
     }
 }
 
+/** 等级制高等级文本（视觉上等同百分制 ≥90 分的绿色高亮）。 */
+private val ExcellentGradeTexts = setOf("A+", "A", "A-", "优", "优秀")
+
+/** 百分制 ≥90 或等级制拿到 A/优，都用成功色高亮；其余（含 P/NP）用主题色。
+ *等级制补绩点后 countsForStatistics 会变 true，不能再拿它当
+ *「是否等级制」的判据，否则 A 会失去绿色高亮。 */
+fun scoreIsExcellent(record: XmuScoreRecord): Boolean =
+    (record.score ?: 0.0) >= 90.0 || scoreResultText(record) in ExcellentGradeTexts
+
 fun scoreMetricText(value: Double?): String =
     value?.let { String.format(Locale.US, "%.2f", it) } ?: "-"
 
 fun scoreRecordDetail(record: XmuScoreRecord): String =
-    if (record.countsForStatistics) {
+    if (record.score != null) {
         "成绩 ${scoreMetricText(record.score)} · 绩点 ${scoreMetricText(record.gradePoint)} · 学分 ${scoreMetricText(record.credit)}"
     } else {
         val result = scoreResultText(record)
+        // 等级制补出的绩点也展示出来；中文五级制/P/NP 仍无绩点。
+        val point = record.gradePoint?.let { " · 绩点 ${scoreMetricText(it)}" }.orEmpty()
         if (isTwoLevelScore(record)) {
-            "成绩 $result · 学分 ${scoreMetricText(record.credit)}"
+            "成绩 $result$point · 学分 ${scoreMetricText(record.credit)}"
         } else {
-            "成绩 $result · ${scoreGradeModeText(record)} · 学分 ${scoreMetricText(record.credit)}"
+            "成绩 $result · ${scoreGradeModeText(record)}$point · 学分 ${scoreMetricText(record.credit)}"
         }
     }
 
+/** 成绩模式名不是成绩本身：旧缓存可能存了「等级制」，显示时降级为「—」。 */
+private val gradeModeDisplayNames = setOf("百分制", "等级制", "五级制", "两级制", "非百分制", "P/NP")
+
 fun scoreResultText(record: XmuScoreRecord): String {
-    val rawResult = record.resultText.ifBlank { record.gradeMode.ifBlank { "已记录" } }
+    val rawResult = (record.resultText.ifBlank { record.gradeMode.ifBlank { "已记录" } })
+        .takeUnless { it in gradeModeDisplayNames } ?: "—"
     return if (isTwoLevelScore(record)) {
         if (rawResult.equals("NP", ignoreCase = true) || !record.countsForCompletedCredit) "NP" else "P"
     } else {
@@ -663,7 +844,7 @@ fun isTwoLevelScore(record: XmuScoreRecord): Boolean =
 
 @Composable
 fun OptionRow(label: String, options: List<String>, selected: String, onSelected: (String) -> Unit) {
-    Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    PrivacyText(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -676,20 +857,26 @@ fun OptionRow(label: String, options: List<String>, selected: String, onSelected
                     onClick = { onSelected(option) },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                ) { Text(option) }
+                ) { PrivacyText(option) }
             } else {
                 OutlinedButton(
                     onClick = { onSelected(option) },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                ) { Text(option) }
+                ) { PrivacyText(option) }
             }
         }
     }
 }
 
 @Composable
-fun CoursewareItemCard(item: CoursewareUiItem, checked: Boolean, onToggle: () -> Unit) {
+fun CoursewareItemCard(
+    item: CoursewareUiItem,
+    checked: Boolean,
+    onToggle: () -> Unit,
+    /**该课件曾成功落盘（持久化标记），显示「已下载」。 */
+    downloaded: Boolean = false,
+) {
     val failed = item.downloadStatus.startsWith("下载失败")
     InfoCard(container = if (failed) themeFailedCard() else MaterialTheme.colorScheme.surface) {
         // 整行可点（toggleable）：只有 Checkbox 可点命中率太低，触控/无障碍都不达标。
@@ -712,31 +899,48 @@ fun CoursewareItemCard(item: CoursewareUiItem, checked: Boolean, onToggle: () ->
                 modifier = Modifier.clearAndSetSemantics {},
             )
             Column(modifier = Modifier.weight(1f)) {
-                Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (item.moduleName.isNotBlank()) Text("章节：${item.moduleName}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("文件名：${item.filename.ifBlank { "入口文件" }}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("类型：${item.type}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("下载状态：${item.downloadStatus}", color = coursewareStatusColor(item.downloadStatus), fontWeight = FontWeight.Bold)
+                // 课件条目是课程的子项，标题不得比课程名（bodyMedium）更大；
+                // 去掉 Bold，避免视觉上压过同字号的课程名。
+                PrivacyText(item.title, style = MaterialTheme.typography.bodyMedium)
+                if (item.moduleName.isNotBlank()) PrivacyText("章节：${item.moduleName}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PrivacyText("文件名：${item.filename.ifBlank { "入口文件" }}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PrivacyText("类型：${item.type}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    PrivacyText(
+                        "下载状态：${item.downloadStatus}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = coursewareStatusColor(item.downloadStatus),
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (downloaded) {
+                        // 「已下载」是完成态，用成功绿；原来的品牌深蓝与正文蓝色同族，
+                        // 在浅底上一眼分不出「可下载」和「已下载」。
+                        // 靠右贴边，且末字「载」与课程行角标末字「条」同列。
+                        // 实测量得（1200×2664 / 520dpi）：卡片内容右缘 1080px，角标「条」墨迹右缘 1026px，
+                        // 差 54px ≈ 17dp —— 这里就用 17dp 右侧内缩把这 17dp 让出来。
+                        PrivacyText(
+                            "✓ 已下载",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = themeSuccess(),
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            modifier = Modifier.padding(end = 17.dp),
+                        )
+                    }
+                }
                 val reason = item.failureReason.ifBlank {
                     item.downloadStatus.substringAfter("下载失败（", "").substringBefore("）")
                 }
                 if (reason.isNotBlank() && failed) {
-                    Text("失败原因：$reason", color = coursewareStatusColor(item.downloadStatus))
+                    PrivacyText("失败原因：$reason", color = coursewareStatusColor(item.downloadStatus))
                 }
             }
         }
-    }
-}
-
-@Composable
-fun TutorialSection(
-    title: String,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    InfoCard(modifier = modifier) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        content()
     }
 }
 
@@ -746,9 +950,9 @@ fun friendlyMessage(error: Throwable): String {
     if (error is MainSessionExpiredException) return "登录已过期，请重新登录"
     val message = error.message.orEmpty()
     return when (shortCoursewareError(message)) {
-        "登录过期" -> "登录已过期，请重新登录"
-        "网络失败" -> "网络连接失败，请稍后重试"
-        "平台未提供地址" -> "平台没有提供可用地址"
+        ErrorCodes.LOGIN_EXPIRED -> "登录已过期，请重新登录"
+        ErrorCodes.NETWORK_FAILURE -> "网络连接失败，请稍后重试"
+        ErrorCodes.URL_MISSING -> "平台没有提供可用地址"
         else -> message.ifBlank { "操作失败" }
     }
 }
@@ -811,15 +1015,15 @@ fun coursewareStatusColor(status: String): Color = when {
  * 不同厂商对第三方 pin 的态度差异很大，这里按「硬封禁 / 需权限 / 标准」三层处理：
  *
  * 1. 硬封禁（ColorOS 系 + vivo）：一加 / ColorOS 实测机型上，桌面
- *    [com.android.launcher3.dragndrop.AddItemActivity.isAllowedAddWidget] 直接在
- *    onCreate 里返回 false，[AppWidgetManager.requestPinAppWidget] 调用后 58ms 内
- *    finish，既不弹窗也无回调，纯靠 API 永成功不了。这类直接引导用户走系统
- *    「小部件」入口，不做注定失败的 pin 请求。
+ *[com.android.launcher3.dragndrop.AddItemActivity.isAllowedAddWidget] 直接在
+ *onCreate 里返回 false，[AppWidgetManager.requestPinAppWidget] 调用后 58ms 内
+ *finish，既不弹窗也无回调，纯靠 API 永成功不了。这类直接引导用户走系统
+ *「小部件」入口，不做注定失败的 pin 请求。
  *
  * 2. 需权限（小米 / Redmi 的 MIUI / HyperOS）：系统声称支持，但若应用没拿到
- *    「桌面快捷方式」权限，[AppWidgetManager.requestPinAppWidget] 会「谎报成功、实际
- *    静默失败」——AddItemActivity 立即 finish，既无回调也无法靠返回值判断。所以仍要
- *    发起 pin，但由调用方延时校验成功与否；失败再回退到「去设置开权限」引导。
+ *「桌面快捷方式」权限，[AppWidgetManager.requestPinAppWidget] 会「谎报成功、实际
+ *静默失败」——AddItemActivity 立即 finish，既无回调也无法靠返回值判断。所以仍要
+ *发起 pin，但由调用方延时校验成功与否；失败再回退到「去设置开权限」引导。
  *
  * 3. 标准（三星 / Pixel / 通用 AOSP / 华为 / 荣耀 / 其他）：直接发起 pin + 延时校验兜底。
  *
@@ -885,10 +1089,22 @@ fun syncScheduleWidget(
     inferredCalendar: XmuAcademicCalendar? = null,
     manualWeek: Int = 0,
 ) {
+    val calendar = inferredCalendar ?: xmuAcademicCalendarForTerm(termCode)
+    // 手动周次只是校准基准：有反推日历时不参与，避免两套周次互相打架。
+    val effectiveManualWeek = if (inferredCalendar == null) manualWeek else 0
     val days = projectScheduleWidgetDays(
-        entries, termCode, inferredCalendar ?: xmuAcademicCalendarForTerm(termCode),
-        manualWeek = if (inferredCalendar == null) manualWeek else 0,
+        entries, termCode, calendar,
+        manualWeek = effectiveManualWeek,
     )
     ScheduleWidgetData.saveUpcoming(context, days)
     ScheduleWidgetProvider.refreshAll(context)
+    // 周课表小组件一次投影整学期各周，供桌面左右箭头翻周；当前周仍落在 KEY_JSON。
+    val weekBundle = projectScheduleWeekWidgetBundle(entries, termCode, calendar, manualWeek = effectiveManualWeek)
+    val currentWeek = if (effectiveManualWeek in 1..(calendar?.totalWeeks ?: 19)) {
+        effectiveManualWeek
+    } else {
+        xmuAcademicWeekFor(calendar, java.time.LocalDate.now()).week ?: 0
+    }
+    ScheduleWeekWidgetData.saveBundle(context, weekBundle, currentWeek)
+    ScheduleWeekWidgetProvider.refreshAll(context)
 }

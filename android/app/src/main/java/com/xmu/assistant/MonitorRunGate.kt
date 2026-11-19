@@ -249,7 +249,7 @@ internal fun processRollcallMonitorPoll(
                     recordAnswerAttempt(answerAttempts, event.id, AnswerAttemptOutcome.UNCERTAIN)
                 }
             ) return
-            // 用户取消、线程中断和严重故障立即停止，不能继续发起其它签到写入。
+            // 不能继续发起其它签到写入。
             if (error !is Exception || error is CancellationException || error is InterruptedException) throw error
             hasUnresolvedAnswerFailure = true
             if (firstAnswerFailure == null) firstAnswerFailure = error

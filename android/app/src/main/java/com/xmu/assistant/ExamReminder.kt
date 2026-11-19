@@ -16,7 +16,7 @@ import androidx.core.content.ContextCompat
 /** 考试提醒设置（普适：只含提醒偏好，不含账号信息）。 */
 data class ExamReminderSettings(
     val enabled: Boolean = false,
-    /** 提前提醒分钟数，0-60。 */
+    /** 提前提醒分钟数，0-EXAM_REMINDER_MAX_MINUTES。 */
     val advanceMinutes: Int = 30,
     /** 是否使用全屏通知（闹钟式）；需要用户额外授权。 */
     val fullScreenEnabled: Boolean = false,
@@ -149,7 +149,7 @@ internal object ExamReminder {
         }
     }
 
-    /** 生成"打开闹钟与提醒设置"的 Intent（引导用户授权精确闹钟）。 */
+    /**生成"打开闹钟与提醒设置"的 Intent。 */
     @android.annotation.SuppressLint("InlinedApi")
     fun exactAlarmSettingsIntent(context: Context): Intent =
         Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
@@ -207,7 +207,7 @@ internal object ExamReminder {
         )
 
     /** 考试提醒触发时刻：考试日期 + 开始时间 - advanceMinutes。
-     *  开始时刻永远在考试当天（结束早于开始仅表示结束跨到次日，不影响开始日期）。解析失败返回 null。 */
+     *开始时刻永远在考试当天（结束早于开始仅表示结束跨到次日，不影响开始日期）。解析失败返回 null。 */
     internal fun examReminderTriggerAtMillis(exam: XmuExam, advanceMinutes: Int): Long? {
         val date = runCatching { java.time.LocalDate.parse(exam.date) }.getOrNull() ?: return null
         val parts = exam.timeRange.split("-").map { it.trim() }
@@ -279,7 +279,9 @@ internal fun loadReminderSettings(context: Context): ExamReminderSettings {
     val settings = AssistantSettings(context)
     return ExamReminderSettings(
         enabled = settings.examReminderEnabled,
-        advanceMinutes = settings.examReminderAdvanceMinutes.coerceIn(0, 60),
+        // 上限必须与写入侧（AssistantSettings）一致。旧版这里夹在 60 分钟，
+        // 表现为设置不生效。
+        advanceMinutes = settings.examReminderAdvanceMinutes.coerceIn(0, EXAM_REMINDER_MAX_MINUTES),
         fullScreenEnabled = settings.examReminderFullScreen,
     )
 }

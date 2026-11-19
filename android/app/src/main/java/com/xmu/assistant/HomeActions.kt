@@ -45,6 +45,8 @@ internal class HomeActions(
     private val setStartupSessionReady: (Boolean) -> Unit,
     private val clearLoggedOutUi: () -> Unit,
     private val refreshMonitorHealth: () -> Unit,
+    /**手动登录（含切换账号）成功 → 跳「使用准备与教程」页，不再只限首次。 */
+    private val onLoginTutorial: () -> Unit,
 ) {
     // 写路径组解构回原名（B6 第二批）：方法体既有调用点零改动。
     private val setMonitorTransitionId = monitorWrites.setMonitorTransitionId
@@ -73,7 +75,7 @@ internal class HomeActions(
         ProcessSessionRecovery.coordinator.invalidate()
         // 手动登录与自动恢复共用同一把进程级单飞锁：
         // tryStartAutoLogin 成功才允许发请求，失败说明 autoLogin/recover 在途，
-        // 直接拒绝，杜绝双身份域并发登录（CAS 风控红线）。
+        // 直接拒绝，杜绝双身份域并发登录。
         val loginToken = ProcessSessionRecovery.coordinator.tryStartAutoLogin()
         if (loginToken == null) {
             show("已有登录进行中，请稍候")
@@ -105,6 +107,8 @@ internal class HomeActions(
                             settings.username = accountUsername
                             settings.password = accountPassword
                             settings.cookieHeader = result.cookieHeader
+                            // 记住账号密码（仅本机，可关）：供快速切换/重登使用
+                            settings.rememberAccount(accountUsername, accountPassword)
                             // 换账号登录：清掉上一个账号的教务(ids/jw) cookie 与全部数据残留
                             // （成绩持久化、课表、考试、提醒、桌面小卡片、课程缓存），
                             // 否则 B 账号直接看到 A 的成绩/课表/考试，A 的提醒继续对 B 触发（串号/串提醒）。
@@ -148,6 +152,8 @@ internal class HomeActions(
                             // 继承 A 的基准导致周次错位）
                             settings.clearManualAcademicWeeks()
                             settings.markLoginSucceeded()
+                            // 每次手动登录都进「使用准备与教程」（原来仅安装后首次）
+                            onLoginTutorial()
                             setCookieHeader(result.cookieHeader)
                             setLoggedIn(true)
                             setStartupSessionReady(true)
@@ -260,7 +266,7 @@ internal class HomeActions(
                 setMonitorTransitionInProgress(false)
                 if (busyNow() == BusyStates.PAUSING_MONITOR) setBusy(BusyStates.IDLE)
                 refreshMonitorHealth()
-                show("监控已暂停")
+                show("提醒已暂停")
             }
         }
     }

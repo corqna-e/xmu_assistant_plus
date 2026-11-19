@@ -19,7 +19,7 @@ internal fun <T, R> boundedParallelMap(
     val executor = executorFactory(minOf(maxParallel, items.size))
     return try {
         val tasks = items.map { item -> java.util.concurrent.Callable<R> { transform(item) } }
-        // invokeAll 并行等待所有任务，避免逐个 get() 串行阻塞；
+        //invokeAll 并行等待所有任务，避免逐个 get 串行阻塞；
         // 任务异常被 Future 包成 ExecutionException，统一 unwrap 出原始异常，
         // 保证上层按原始异常类型分类（会话过期/网络/格式）不会失配。
         executor.invokeAll(tasks).map { future ->

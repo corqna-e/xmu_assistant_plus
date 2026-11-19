@@ -26,6 +26,11 @@
 # Kotlin Metadata 保留（Compose/反射元数据）
 -keepclassmembers class kotlin.Metadata { *; }
 
+# JNI 入口必须保留本地方法名与所在类名，否则 native 注册失败（UnsatisfiedLinkError）。
+-keepclasseswithmembernames,includedescriptorclasses class * { native <methods>; }
+-keepattributes Signature,InnerClasses,EnclosingMethod
+-keepattributes *Annotation*
+
 # PDFBox's optional JPEG2000 renderer is unused: ranking reads the PDF text layer only.
 # Image-only certificates remain exportable even when no rank can be extracted.
 -dontwarn com.gemalto.jp2.JP2Decoder

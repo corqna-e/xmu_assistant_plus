@@ -16,17 +16,17 @@ import kotlinx.coroutines.withContext
  *
  * 设计约定（与拆分前行为逐字对齐）：
  * - 状态字段全部 Compose 可观察（mutableStateOf），仅 UI 线程写入；
- *   后台线程只读发起时的快照值（避免跨线程读写 MutableState）。
+ *后台线程只读发起时的快照值（避免跨线程读写 MutableState）。
  * - 会话保护：网络回调先经 sessionEpoch.accepts(...) 校验世代再写状态，
- *   与其它模块共用同一进程级 epoch；续登写回教务 cookie（setScoreCookieHeader）
- *   前同样校验 isCurrent（防登出/换号后旧账号 cookie 写回）。
+ *与其它模块共用同一进程级 epoch；续登写回教务 cookie（setScoreCookieHeader）
+ *前同样校验 isCurrent（防登出/换号后旧账号 cookie 写回）。
  * - 存储依赖收窄为函数式注入（scoreCookieHeader/setScoreCookieHeader/scoreRecordsJson/
- *   scoreUpdatedAtMillis）：组合侧绑定 AssistantSettings（加密 prefs），测试注入 fake。
+ *scoreUpdatedAtMillis）：组合侧绑定 AssistantSettings（加密 prefs），测试注入 fake。
  * - 风控红线：成绩刷新内部可能触发教务 CAS 续登（XmuScoreAutoQueryClient 内部续登），
- *   与 TronClass 手动登录并发会打两个身份域——入口检查 accountTransitionInProgress；
- *   请求统一走 "scores" 互斥门（RequestGate）。
+ *与 TronClass 手动登录并发会打两个身份域——入口检查 accountTransitionInProgress；
+ *请求统一走 "scores" 互斥门（RequestGate）。
  * - 网络/IO 用注入的 scope（组合侧 rememberCoroutineScope，随 Activity 销毁取消），
- *   不再使用裸 thread{}（防"页面已关还弹 Toast / 写已销毁状态"）。
+ *不再使用裸 thread{}（防"页面已关还弹 Toast / 写已销毁状态"）。
  */
 internal class ScoreSectionState(
     private val activity: Activity,
@@ -80,7 +80,7 @@ internal class ScoreSectionState(
 
     /**
      * 强制刷新成绩。登录/恢复在途时禁止并发刷新：成绩刷新内部可能触发 academic CAS 续登，
-     * 与 TronClass 登录并发会打两个身份域（风控红线）。
+     *与 TronClass 登录并发会打两个身份域。
      */
     fun refresh(): Boolean {
         if (accountTransitionInProgress()) {

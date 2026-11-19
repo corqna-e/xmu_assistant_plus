@@ -9,6 +9,8 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -17,8 +19,35 @@ import android.util.Log
 import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 
+/** 自动监控窗口外的待机复查间隔：短到能在窗口开始后及时恢复，长到不空耗电。 */
+private const val AUTO_MONITOR_IDLE_WAIT_MILLIS = 60_000L
+
 class RollcallMonitorService : Service() {
     @Volatile private var workerToken: Long? = null
+
+    // 时段自查用的课表快照缓存：服务每轮都会判一次窗口，而课表文件几十 KB，
+    // 每分钟读一次盘没必要；60 秒内复用同一份，课表刷新后最迟一分钟后生效。
+    private var windowSnapshotCache: XmuScheduleSnapshot? = null
+    private var windowSnapshotCachedAt = 0L
+
+    /** 优先文件缓存（当前唯一真实来源），回退旧版 prefs，两者都空视为「无课表」。 */
+    private fun monitorWindowSnapshot(settings: AssistantSettings): XmuScheduleSnapshot {
+        val now = SystemClock.elapsedRealtime()
+        windowSnapshotCache?.let { cached ->
+            if (now - windowSnapshotCachedAt < 60_000L) return cached
+        }
+        val fromFile = runCatching { loadScheduleSnapshotFromFile(this) }
+            .getOrDefault(XmuScheduleSnapshot())
+        val snapshot = if (fromFile.entries.isNotEmpty()) {
+            fromFile
+        } else {
+            runCatching { xmuScheduleSnapshotFromJson(settings.scheduleCacheJson) }
+                .getOrDefault(XmuScheduleSnapshot())
+        }
+        windowSnapshotCache = snapshot
+        windowSnapshotCachedAt = now
+        return snapshot
+    }
 
     // 第三方推送专用单线程执行器：签到事件可能短时集中到达，原先每个事件裸起
     // 一个 daemon 线程，线程数随事件数无界增长；推送发送本身慢（各自 15s 超时）
@@ -60,9 +89,9 @@ class RollcallMonitorService : Service() {
     }
 
     /** dataSync 超时兜底（API 35 回调）：正常路径 API 35+ 已用 specialUse（无超时）
-     *  不会进这里；若个别 ROM 仍按 dataSync 判定超时，优雅自停而不是被系统以
-     *  ForegroundServiceDidNotStopInTimeException 杀进程（监控停摆且用户无感知）。
-     *  用户从首页/磁贴重新点「启动监控」即可恢复。 */
+     *不会进这里；若个别 ROM 仍按 dataSync 判定超时，优雅自停而不是被系统以
+     *ForegroundServiceDidNotStopInTimeException 杀进程。
+     *用户从首页/磁贴重新点「启动提醒」即可恢复。 */
     override fun onTimeout(startId: Int, fgsType: Int) {
         Log.w(TAG, "前台服务超时回调（type=$fgsType）：优雅自停，等待用户手动重启监控")
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -112,6 +141,29 @@ class RollcallMonitorService : Service() {
         }
     }
 
+    /**
+     * 冷启动首轮专用：默认网络可能尚未就绪（刚开机时 Wi-Fi 仍在关联、校园网尚未认证），
+     * 此时发请求必然抛 IOException，失败会直接顶到首页横幅。最多等 [STARTUP_NETWORK_WAIT_MILLIS]，
+     * 每 400ms 复查一次默认网络是否具备 INTERNET 能力；已就绪立即返回，超时也照常尝试。
+     */
+    private fun awaitNetworkAvailable(token: Long, settings: AssistantSettings) {
+        val manager = runCatching { getSystemService(ConnectivityManager::class.java) }.getOrNull() ?: return
+        val deadline = SystemClock.elapsedRealtime() + STARTUP_NETWORK_WAIT_MILLIS
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (!isMonitorRunActive(token, settings)) return
+            val ready = runCatching {
+                val capabilities = manager.activeNetwork?.let(manager::getNetworkCapabilities)
+                capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }.getOrDefault(false)
+            if (ready) return
+            try {
+                Thread.sleep(400)
+            } catch (_: InterruptedException) {
+                return
+            }
+        }
+    }
+
     private fun monitorLoop(token: Long) {
         val settings = AssistantSettings(this)
         // seen 去重集合持久化（观察记录③，自由区修复）：
@@ -129,10 +181,36 @@ class RollcallMonitorService : Service() {
         val completed = ArrayDeque(restoreRollcallIds(cookieSnapshot, COMPLETED_LIST_KEY, restoredLegacy))
         val completedSet = completed.toMutableSet()
         val answerAttempts = restoreAnswerAttempts(cookieSnapshot).toMap(linkedMapOf())
+        // 冷启动首轮的失败判定单独放宽。
+        // 服务随开机或进程重建被拉起时，网络栈、校园网认证、DNS 缓存都还在就绪途中，
+        // 第一发请求失败属于时序问题而非真实断网；直接 recordMonitorFailure 会让
+        // 首页「自动签到」下方立刻出现「网络连接失败」。首轮先等网络可用，仍失败则
+        // 静默重试 [STARTUP_POLL_RETRY_LIMIT] 次，之后才按常规流程计入失败。
+        var startupRetries = 0
+        var firstPollSettled = false
         try {
             while (isMonitorRunActive(token, settings)) {
                 val rollcallSettings = settings.rollcall()
                 val intervalSeconds = rollcallSettings.pollIntervalSeconds.coerceIn(1, 300)
+                // 监控策略·时段自查：仅在有课窗口（课前 30 分钟至课后 30 分钟）内执行
+                // 网络检查；其余时间（含当天没课、课间空隙）只待机等待，不触发失败计数。
+                // 课表数据改从文件缓存读（旧的 prefs 字段已是空壳，导致开关形同虚设）。
+                if (settings.autoMonitorWindow) {
+                    val now = java.time.LocalTime.now()
+                    val inWindow = autoMonitorWindowActive(
+                        monitorWindowSnapshot(settings),
+                        java.time.LocalDate.now().dayOfWeek.value,
+                        now.hour * 60 + now.minute,
+                    )
+                    if (!inWindow) {
+                        if (!monitorWorkerCoordinator.runIfCurrent(token, settings.monitorDesired) {
+                                updateForegroundNotification(intervalSeconds, "不在上课时段")
+                            }
+                        ) return
+                        awaitInterruptible(token, settings, AUTO_MONITOR_IDLE_WAIT_MILLIS)
+                        continue
+                    }
+                }
                 try {
                     val liveCookie = settings.cookieHeader
                     if (liveCookie.isBlank()) error("登录已过期，请重新登录")
@@ -146,7 +224,9 @@ class RollcallMonitorService : Service() {
                         },
                     )
                     // 同一轮详情 GET 同时供进度门槛、本人状态和数字码使用。
+                    if (!firstPollSettled) awaitNetworkAvailable(token, settings)
                     val allEvents = engine.pollWithDetails(settings.username)
+                    firstPollSettled = true
                     // 自适应轮询节奏（与桌面端 MonitorWorker 对齐）：存在进行中的签到
                     // （remainingSeconds > 0）时切密集轮询，空闲时段维持用户设定间隔。
                     // 平均发现延迟从 interval/2 降到 ACTIVE_POLL_INTERVAL_SECONDS/2；
@@ -208,6 +288,13 @@ class RollcallMonitorService : Service() {
                 } catch (error: Exception) {
                     if (!isMonitorRunActive(token, settings)) return
                     val message = friendlyMessage(error)
+                    // 冷启动首轮：网络就绪时序问题居多，先静默重试，不落失败状态、不发通知。
+                    if (!firstPollSettled && startupRetries < STARTUP_POLL_RETRY_LIMIT) {
+                        startupRetries += 1
+                        awaitInterruptible(token, settings, STARTUP_POLL_RETRY_WAIT_MILLIS)
+                        continue
+                    }
+                    firstPollSettled = true
                     if (!monitorWorkerCoordinator.runIfCurrent(token, settings.monitorDesired) {
                             settings.recordMonitorFailure(message)
                         }
@@ -232,7 +319,7 @@ class RollcallMonitorService : Service() {
             monitorWorkerCoordinator.complete(token)
             if (workerToken == token) workerToken = null
             // worker 因会话过期/换号/停止退出后，Service 若继续前台常驻会顶着
-            // 「监控运行中」的过期快照空转（用户误以为还在监控）。没有活跃 run
+            // 「监控运行中」的过期快照空转。没有活跃 run
             // 时自停，前台通知随服务移除；若监控仍被需要，START_STICKY/重登流程
             // 会重新拉起并 start 新 worker（hasCurrent 为原子查询，不会误杀新 run）。
             runCatching {
@@ -244,12 +331,12 @@ class RollcallMonitorService : Service() {
     internal fun createNotificationChannels() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "虾大助手后台监控", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, "虾大助手Plus后台监控", NotificationManager.IMPORTANCE_LOW)
         )
         // 旧通道已创建为 LOW，Android 不允许应用直接提升其重要性。提醒使用独立 ID，
         // 常驻服务仍保持安静；后续创建不会覆盖用户对提醒通道的静音/禁用选择。
         manager.createNotificationChannel(
-            NotificationChannel(REMINDER_CHANNEL_ID, "虾大助手签到与监控提醒", NotificationManager.IMPORTANCE_DEFAULT)
+            NotificationChannel(REMINDER_CHANNEL_ID, "虾大助手Plus签到与监控提醒", NotificationManager.IMPORTANCE_DEFAULT)
         )
     }
 
@@ -268,7 +355,7 @@ class RollcallMonitorService : Service() {
         // 本地通知（快速、无网络）：留在 gate 互斥区内，保证登出/暂停时不会漏发本地提醒
         val localPosted = postReminderNotification(event.id.hashCode(), notify.systemEnabled) {
             Notification.Builder(this, REMINDER_CHANNEL_ID)
-                .setContentTitle("虾大助手 签到提醒")
+                .setContentTitle("虾大助手Plus 签到提醒")
                 .setContentText("${event.courseTitle} / ${event.type}")
                 .setStyle(Notification.BigTextStyle().bigText(rollcallNotificationBody(event, actionUrl)))
                 .setSmallIcon(R.drawable.ic_notification)
@@ -288,14 +375,14 @@ class RollcallMonitorService : Service() {
                 // token/授权码失效后该通道会长期静默死亡，无日志则完全无法察觉。
                 if (notify.pushPlusEnabled) {
                     runCatching {
-                        PushPlusSender(notify.pushPlusToken).send("虾大助手 签到提醒", rollcallNotificationBody(event, actionUrl))
+                        PushPlusSender(notify.pushPlusToken).send("虾大助手Plus 签到提醒", rollcallNotificationBody(event, actionUrl))
                     }.onFailure { Log.w(TAG, "PushPlus 推送失败：${it.message}", it) }
                 }
                 if (notify.qqMailEnabled) {
                     runCatching {
-                        QQMailSender(notify.qqMailSender, notify.qqMailPassword, notify.qqMailRecipient, notify.qqMailPorts)
-                            .send("虾大助手 签到提醒", rollcallNotificationBody(event, actionUrl))
-                    }.onFailure { Log.w(TAG, "QQ 邮箱推送失败：${it.message}", it) }
+                        QQMailSender(notify.qqMailSender, notify.qqMailPassword, notify.qqMailRecipient, notify.qqMailPorts, notify.qqMailHost)
+                            .send("虾大助手Plus 签到提醒", rollcallNotificationBody(event, actionUrl))
+                    }.onFailure { Log.w(TAG, "邮箱推送失败：${it.message}", it) }
                 }
             }
         }.onFailure { Log.w(TAG, "第三方推送任务提交失败（服务已销毁）：${it.message}") }.isSuccess
@@ -309,7 +396,7 @@ class RollcallMonitorService : Service() {
         systemEnabled: Boolean = AssistantSettings(this).notifications().systemEnabled,
     ): Boolean = postReminderNotification(MONITOR_PROBLEM_NOTIFICATION_ID, systemEnabled) {
         Notification.Builder(this, REMINDER_CHANNEL_ID)
-            .setContentTitle("虾大助手 后台监控异常")
+            .setContentTitle("虾大助手Plus 后台监控异常")
             .setContentText(message)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(mainPendingIntent())
@@ -340,22 +427,27 @@ class RollcallMonitorService : Service() {
         }
     }
 
-    private fun updateForegroundNotification(intervalSeconds: Int) {
+    private fun updateForegroundNotification(intervalSeconds: Int, idleNote: String? = null) {
         val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(FOREGROUND_NOTIFICATION_ID, foregroundNotification(intervalSeconds))
+        manager.notify(FOREGROUND_NOTIFICATION_ID, foregroundNotification(intervalSeconds, idleNote))
     }
 
-    private fun foregroundNotification(intervalSeconds: Int? = null): Notification {
+    private fun foregroundNotification(
+        intervalSeconds: Int? = null,
+        idleNote: String? = null,
+    ): Notification {
         val settings = AssistantSettings(this)
         val lastCheck = formatMonitorTime(settings.monitorLastCheckMillis)
         val failures = settings.monitorConsecutiveFailures
-        val text = if (failures > 0) {
-            "最近失败 $failures 次：${settings.monitorLastError.ifBlank { "请检查网络或登录状态" }}"
-        } else {
-            "监控运行中 · 最近检查：$lastCheck · 间隔 ${intervalSeconds ?: settings.rollcall().pollIntervalSeconds} 秒"
+        val interval = intervalSeconds ?: settings.rollcall().pollIntervalSeconds
+        val text = when {
+            // 待机时如实告知“没在检查”，否则用户看到常驻通知会以为它一直在跑。
+            idleNote != null -> "$idleNote · 待机中不发请求"
+            failures > 0 -> "最近失败 $failures 次：${settings.monitorLastError.ifBlank { "请检查网络或登录状态" }}"
+            else -> "监控中 · 最近检查：$lastCheck · 间隔 $interval 秒"
         }
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("虾大助手")
+            .setContentTitle("虾大助手Plus")
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(mainPendingIntent())
@@ -400,10 +492,15 @@ class RollcallMonitorService : Service() {
         private const val MAX_ANSWER_ATTEMPTS_TRACKED = 512
         /** 自适应轮询：存在进行中的签到时的密集轮询间隔上限（秒），与桌面端对齐。 */
         private const val ACTIVE_POLL_INTERVAL_SECONDS = 5
+        /** 冷启动首轮等待默认网络就绪的上限（毫秒）。 */
+        private const val STARTUP_NETWORK_WAIT_MILLIS = 4_000L
+        /** 冷启动首轮请求失败后的静默重试次数与间隔。 */
+        private const val STARTUP_POLL_RETRY_LIMIT = 2
+        private const val STARTUP_POLL_RETRY_WAIT_MILLIS = 2_000L
     }
 
     /** 恢复已处理过的签到 id 列表（进程被杀后去重不丢失，按处理先后保序）。
-     *  绑定账号：cookie 变化（换账号/重登）即返回空，避免把新账号的签到误判为已处理。 */
+     *绑定账号：cookie 变化（换账号/重登）即返回空，避免把新账号的签到误判为已处理。 */
     private fun restoreLegacySeenRollcalls(cookieHeader: String): List<String> {
         if (cookieHeader.isBlank()) return emptyList()
         val prefs = getSharedPreferences(SEEN_PREFS, MODE_PRIVATE)
@@ -426,7 +523,7 @@ class RollcallMonitorService : Service() {
     }
 
     /** 持久化 seen 列表（只存签到 id 与 cookie 的 SHA-256 指纹，均非敏感；保序存储保证驱逐最旧）。
-     *  绑定账号指纹防止跨账号误用——完整 Cookie 属加密存储范畴，绝不落入普通 prefs（体检报告 P1-4）。 */
+     *绑定账号指纹防止跨账号误用——完整 Cookie 属加密存储范畴，绝不落入普通 prefs。 */
     private fun persistRollcallIds(cookieHeader: String, key: String, ids: Collection<String>) {
         if (cookieHeader.isBlank()) return
         getSharedPreferences(SEEN_PREFS, MODE_PRIVATE)
@@ -469,7 +566,7 @@ internal fun shouldStartMonitorWorker(monitorDesired: Boolean, cookieHeader: Str
  * 会话 Cookie 快照的 SHA-256 指纹（小写 hex）。
  *
  * 用途：监控去重集合需要「绑定当时的登录态」防跨账号误判，但完整 Cookie 属于
- * 加密凭据，不能明文落普通 SharedPreferences（体检报告 P1-4）——指纹足以完成
+ *加密凭据，不能明文落普通 SharedPreferences——指纹足以完成
  * 等值比对且不可逆推回原凭据。空串约定返回空串，便于调用方短路。
  */
 internal fun cookieFingerprint(cookieHeader: String): String {

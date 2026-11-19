@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--这个组件一直能出现在系统小组件列表里，属性结构保持不动，作为周课表的对照基准。 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:minWidth="300dp"

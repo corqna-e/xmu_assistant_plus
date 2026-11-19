@@ -38,8 +38,8 @@ data class AcademicCacheSnapshot(
 ) {
     companion object {
         /** 进程级课件缓存快照：转屏（Activity 重建）复用内存数据，避免课程+课件大 JSON
-         *  （可达数百 KB）每次重建都全量重解析；登出/换号清理路径置 null（跟随账号会话）。
-         *  与 ScheduleSectionState 的进程级课表快照同范式。 */
+         *（可达数百 KB）每次重建都全量重解析；登出/换号清理路径置 null（跟随账号会话）。
+         *与 ScheduleSectionState 的进程级课表快照同范式。 */
         @Volatile
         private var processCache: AcademicCacheSnapshot? = null
 
@@ -128,7 +128,12 @@ fun academicCacheFromJson(value: String): AcademicCacheSnapshot = runCatching {
         coursewareByCourse = courseware,
         coursewareUpdatedAtMillis = coursewareTimes,
     )
-}.getOrDefault(AcademicCacheSnapshot())
+}.getOrElse { error ->
+    // 解析失败不再无声折叠成空快照——留一条诊断，便于排查「课程/课件消失」类反馈
+    // 「平台没数据」和「本地缓存结构变了」。
+    Diagnostics.record("缓存", error, "课程/课件缓存 JSON 解析")
+    AcademicCacheSnapshot()
+}
 
 private fun courseToJson(course: CourseSummary): JSONObject = JSONObject()
     .put("id", course.id)

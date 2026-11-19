@@ -14,7 +14,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -100,12 +99,13 @@ fun CoursewarePage(
     LazyColumn(
         state = coursewareListState,
         modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
             SectionCard(stringResource(R.string.courseware_page_title)) {
                 Button(onClick = onRefreshCourses, enabled = !coursesLoading, modifier = Modifier.fillMaxWidth()) {
-                    Text(
+                    PrivacyText(
                         if (coursesLoading) {
                             stringResource(R.string.courseware_page_courses_refreshing)
                         } else {
@@ -113,9 +113,9 @@ fun CoursewarePage(
                         },
                     )
                 }
-                RefreshStateBanner(loading = coursesLoading, errorMessage = coursesRefreshError, hasData = courses.isNotEmpty())
+                RefreshStateBanner(loading = coursesLoading, errorMessage = coursesRefreshError, hasData = courses.isNotEmpty(), onRetry = onRefreshCourses)
                 if (coursesUpdatedAtMillis > 0L) {
-                    Text(
+                    PrivacyText(
                         stringResource(R.string.courseware_page_courses_updated, formatMonitorTime(coursesUpdatedAtMillis)),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -138,17 +138,17 @@ fun CoursewarePage(
                     OutlinedTextField(
                         value = courseQuery,
                         onValueChange = { courseQuery = it },
-                        label = { Text("搜索课程") },
-                        placeholder = { Text("课程名称或学期") },
+                        label = { PrivacyText("搜索课程") },
+                        placeholder = { PrivacyText("课程名称或学期") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         trailingIcon = {
-                            if (courseQuery.isNotEmpty()) TextButton(onClick = { courseQuery = "" }) { Text("清除") }
+                            if (courseQuery.isNotEmpty()) TextButton(onClick = { courseQuery = "" }) { PrivacyText("清除") }
                         },
                     )
                     OptionRow(stringResource(R.string.courseware_page_filter_year), years, selectedYear) { selectedYear = it }
                     OptionRow(stringResource(R.string.courseware_page_filter_semester), semesters, selectedSemester) { selectedSemester = it }
-                    Text("${stringResource(R.string.courseware_page_course_list_label)} · ${filteredCourses.size} / ${courses.size}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    PrivacyText("${stringResource(R.string.courseware_page_course_list_label)} · ${filteredCourses.size} / ${courses.size}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (filteredCourses.isEmpty()) {
                         EmptyState(
                             stringResource(R.string.courseware_page_no_match_title),
@@ -166,21 +166,21 @@ fun CoursewarePage(
                 val course = filteredCourses[index]
                 val selected = selectedCourse?.id == course.id
                 if (selected) {
-                    Button(onClick = { selectCourseAndReveal(course) }, modifier = Modifier.fillMaxWidth()) { Text(course.displayName) }
+                    Button(onClick = { selectCourseAndReveal(course) }, modifier = Modifier.fillMaxWidth()) { PrivacyText(course.displayName) }
                 } else {
-                    OutlinedButton(onClick = { selectCourseAndReveal(course) }, modifier = Modifier.fillMaxWidth()) { Text(course.displayName) }
+                    OutlinedButton(onClick = { selectCourseAndReveal(course) }, modifier = Modifier.fillMaxWidth()) { PrivacyText(course.displayName) }
                 }
             }
         }
         if (selectedCourse != null) {
             item {
-                Text(
+                PrivacyText(
                     stringResource(R.string.courseware_page_current_course, selectedCourse.displayName),
                     fontWeight = FontWeight.Bold,
                 )
             }
             item {
-                Text(
+                PrivacyText(
                     stringResource(
                         R.string.courseware_page_summary,
                         coursewareItems.size,
@@ -193,12 +193,12 @@ fun CoursewarePage(
             }
             if (downloadProgress.isNotBlank()) {
                 item {
-                    Text(downloadProgress, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    PrivacyText(downloadProgress, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
             }
             item {
                 Button(onClick = onRefreshCourseware, enabled = !coursewareLoading, modifier = Modifier.fillMaxWidth()) {
-                    Text(
+                    PrivacyText(
                         if (coursewareLoading) {
                             stringResource(R.string.courseware_page_refreshing)
                         } else {
@@ -212,11 +212,12 @@ fun CoursewarePage(
                     loading = coursewareLoading,
                     errorMessage = coursewareRefreshError,
                     hasData = coursewareItems.isNotEmpty(),
+                    onRetry = onRefreshCourseware,
                 )
             }
             if (coursewareUpdatedAtMillis > 0L) {
                 item {
-                    Text(
+                    PrivacyText(
                         stringResource(R.string.courseware_page_updated, formatMonitorTime(coursewareUpdatedAtMillis)),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -225,7 +226,7 @@ fun CoursewarePage(
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = onDownload, enabled = downloadEnabled, modifier = Modifier.weight(1f)) {
-                        Text(
+                        PrivacyText(
                             if (downloadLoading) {
                                 stringResource(R.string.courseware_page_downloading)
                             } else {
@@ -234,13 +235,13 @@ fun CoursewarePage(
                         )
                     }
                     OutlinedButton(onClick = onSelectAll, modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.courseware_page_select_all))
+                        PrivacyText(stringResource(R.string.courseware_page_select_all))
                     }
                 }
             }
             item {
                 OutlinedButton(onClick = onOpenPlatform, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.courseware_page_open_platform))
+                    PrivacyText(stringResource(R.string.courseware_page_open_platform))
                 }
             }
             if (coursewareItems.isEmpty()) {

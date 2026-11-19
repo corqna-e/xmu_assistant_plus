@@ -21,16 +21,23 @@ fun refreshFailureMessage(error: Throwable): String {
     // 该异常实际来自空盐 AES 加密（loginAndGetToken 提取不到 pwdEncryptSalt），
     // 现已在源头类型化为 AcademicLoginBlockedException；残留的原始异常落回通用文案。
     return when (shortCoursewareError(message)) {
-        "登录过期" -> "登录已过期，请重新登录"
-        "网络失败" -> "网络连接失败，请稍后重试"
-        "平台未提供地址" -> "平台没有提供可用地址"
+        ErrorCodes.LOGIN_EXPIRED -> "登录已过期，请重新登录"
+        ErrorCodes.NETWORK_FAILURE -> "网络连接失败，请稍后重试"
+        ErrorCodes.URL_MISSING -> "平台没有提供可用地址"
         else -> "数据刷新失败，请稍后重试"
     }
 }
 
-fun refreshStateText(errorMessage: String, hasData: Boolean): String =
+/**
+ *文案去重 —— refreshFailureMessage 出来的句子本身就常带「请稍后重试」，
+ * 再拼一句「请重试。」就成了「…请检查网络后重试。请重试。」。
+ * 有重试按钮时（withRetryHint = true）不再追加提示语，按钮自己会说话。
+ */
+fun refreshStateText(errorMessage: String, hasData: Boolean, withRetryHint: Boolean = false): String =
     if (hasData) {
         "刷新失败，正在显示上次数据：$errorMessage"
+    } else if (withRetryHint) {
+        errorMessage
     } else {
         "刷新失败：$errorMessage。请重试。"
     }

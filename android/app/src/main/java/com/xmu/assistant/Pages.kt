@@ -1,9 +1,6 @@
 package com.xmu.assistant
 
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -23,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.ScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +27,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
@@ -39,7 +34,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -72,6 +66,7 @@ internal fun RollcallStatusPage(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         item {
@@ -82,22 +77,22 @@ internal fun RollcallStatusPage(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("签到情况", fontWeight = FontWeight.Bold)
-                        Text(
+                        PrivacyText("签到情况", fontWeight = FontWeight.Bold)
+                        PrivacyText(
                             if (loading || historyLoading) "正在刷新" else "上次更新 ${if (updatedAtMillis > 0L) formatMonitorTime(updatedAtMillis) else "刚刚"}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     OutlinedButton(onClick = onRefresh, enabled = !loading && !historyLoading) {
-                        Text(if (loading || historyLoading) "刷新中" else "刷新")
+                        PrivacyText(if (loading || historyLoading) "刷新中" else "刷新")
                     }
                 }
                 if (loading || historyLoading || refreshError.isNotBlank()) {
-                    RefreshStateBanner(loading = loading || historyLoading, errorMessage = refreshError, hasData = events.isNotEmpty())
+                    RefreshStateBanner(loading = loading || historyLoading, errorMessage = refreshError, hasData = events.isNotEmpty(), onRetry = onRefresh)
                 }
                 notificationEventLabel(openedEventId, events, historyItems)?.let { label ->
-                    Text(label, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                    PrivacyText(label, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                 }
             }
         }
@@ -115,11 +110,13 @@ internal fun RollcallStatusPage(
                 )
             }
         }
-        item { PreviewSectionHeader("签到记录", "今天") }
+        // 不随记录日期变化，
+        // 放在「签到记录」旁反而让人以为列表只包含今天的记录。
+        item { PreviewSectionHeader("签到记录") }
         if (historyLoading) {
-            item { Text("正在读取最近签到…", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp)) }
+            item { PrivacyText("正在读取最近签到…", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp)) }
         } else if (historyError.isNotBlank()) {
-            item { RefreshStateBanner(loading = false, errorMessage = historyError, hasData = historyItems.isNotEmpty()) }
+            item { RefreshStateBanner(loading = false, errorMessage = historyError, hasData = historyItems.isNotEmpty(), onRetry = onRefresh) }
         }
         if (historyItems.isEmpty()) {
             item {
@@ -149,8 +146,8 @@ private fun ActiveRollcallPreviewCard(
     PreviewCard {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(event.courseTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("发起人：${event.teacher}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PrivacyText(event.courseTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                PrivacyText("发起人：${event.teacher}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             PreviewBadge(event.type)
             PreviewBadge("进行中", PreviewBadgeTone.AMBER)
@@ -158,12 +155,12 @@ private fun ActiveRollcallPreviewCard(
         if (event.type == "数字签到") {
             val progress = event.progress
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
+                PrivacyText(
                     if (progress != null && progress.total > 0) "${progress.present} / ${progress.total} 人已签到" else "签到人数暂未获取",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text(
+                PrivacyText(
                     event.numberCode.takeIf { it.isNotBlank() }?.let { "签到码 $it" } ?: "签到码暂未获取",
                     fontWeight = FontWeight.Bold,
                 )
@@ -178,10 +175,10 @@ private fun ActiveRollcallPreviewCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PreviewIconBox(R.drawable.ic_nav_location)
                 Column(Modifier.weight(1f)) {
-                    Text(preferred?.name ?: "未配置课程坐标", fontWeight = FontWeight.Bold, color = if (preferred == null) themeWarning() else MaterialTheme.colorScheme.onSurface)
-                    Text(if (preferred == null) "配置后自动签到才会提交" else "使用本课程首选坐标", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    PrivacyText(preferred?.name ?: "未配置课程坐标", fontWeight = FontWeight.Bold, color = if (preferred == null) themeWarning() else MaterialTheme.colorScheme.onSurface)
+                    PrivacyText(if (preferred == null) "配置后自动签到才会提交" else "使用本课程首选坐标", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                TextButton(onClick = onManageCoordinates) { Text("坐标管理 ›") }
+                TextButton(onClick = onManageCoordinates) { PrivacyText("坐标管理 ›") }
             }
         }
     }
@@ -194,27 +191,42 @@ private fun CompactRollcallHistoryCard(
     onManageCoordinates: () -> Unit,
 ) {
     PreviewCard {
+        //缺勤/缺席/未到用红色标记；✕（U+2715）与 O 字形大小不一致，
+        // 改成大写字母 X 并统一字号，两个符号视觉等大。
+        val absent = item.ownStatus.trim() in setOf("缺勤", "缺席", "未到", "未签")
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Surface(color = themeSoftGreen(), shape = RoundedCornerShape(11.dp)) {
-                Text("✓", color = themeSuccess(), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+            Surface(
+                color = if (absent) MaterialTheme.colorScheme.errorContainer else themeSoftGreen(),
+                shape = RoundedCornerShape(11.dp),
+            ) {
+                PrivacyText(
+                    if (absent) "X" else "O",
+                    color = if (absent) MaterialTheme.colorScheme.error else themeSuccess(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                )
             }
             Column(Modifier.weight(1f)) {
-                Text(item.courseTitle, fontWeight = FontWeight.Bold)
+                PrivacyText(item.courseTitle, fontWeight = FontWeight.Bold)
                 val code = item.numberCode.takeIf { it.isNotBlank() }?.let { " · 签到码 $it" }.orEmpty()
-                Text("${item.timeDisplay} · ${item.type}$code", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PrivacyText("${item.timeDisplay} · ${item.type}$code", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            PreviewBadge(historyRollcallDisplayStatus(item.ownStatus), PreviewBadgeTone.GREEN)
+            PreviewBadge(
+                historyRollcallDisplayStatus(item.ownStatus),
+                if (absent) PreviewBadgeTone.RED else PreviewBadgeTone.GREEN,
+            )
         }
         if (item.type == "雷达签到") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PreviewIconBox(R.drawable.ic_nav_location)
-                Text(
+                PrivacyText(
                     preferred?.name ?: "课程首选地点",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onManageCoordinates) { Text("坐标管理") }
+                TextButton(onClick = onManageCoordinates) { PrivacyText("坐标管理") }
             }
         }
     }
@@ -250,19 +262,25 @@ fun ScorePage(
             }
             .map { (term, termRecords) -> term to termRecords.sortedBy { it.courseName } }
     }
+    // 学期折叠（模仿课件页）：除最新两学期外默认折叠；用户手动展开/收起的学期
+    // 记在 toggledTerms，与默认状态取反。转屏后 rememberSaveable 保留操作结果。
+    var toggledTerms by rememberSaveable(stateSaver = ScoreToggledTermsSaver) {
+        mutableStateOf<List<String>>(emptyList())
+    }
     // rememberSaveable：转屏后保留滚动位置。
     val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
             PreviewCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column {
-                        Text("成绩概览", fontWeight = FontWeight.Bold)
-                        Text(
+                        PrivacyText("成绩概览", fontWeight = FontWeight.Bold)
+                        PrivacyText(
                             if (updatedAtMillis > 0L) "上次更新 ${formatMonitorTime(updatedAtMillis)}" else "尚未更新",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -289,7 +307,7 @@ fun ScorePage(
                         enabled = !loading,
                         modifier = Modifier.weight(1f).widthIn(min = 112.dp),
                     ) {
-                        Text(if (loading) "刷新中" else "刷新成绩")
+                        PrivacyText(if (loading) "刷新中" else "刷新成绩")
                     }
                     // 两个次级按钮收紧内边距，配合 FlowRow 换行兜底窄屏排版
                     OutlinedButton(
@@ -297,12 +315,12 @@ fun ScorePage(
                         enabled = records.isNotEmpty(),
                         contentPadding = PaddingValues(horizontal = 12.dp),
                     ) {
-                        Text("分享长图")
+                        PrivacyText("分享长图")
                     }
                 }
-                RefreshStateBanner(loading = loading, errorMessage = refreshError, hasData = records.isNotEmpty())
+                RefreshStateBanner(loading = loading, errorMessage = refreshError, hasData = records.isNotEmpty(), onRetry = onRefresh)
                 if (onOpenRank != null) {
-                    TextButton(onClick = onOpenRank, modifier = Modifier.fillMaxWidth()) { Text("专业排名与绩点证明 ›") }
+                    TextButton(onClick = onOpenRank, modifier = Modifier.fillMaxWidth()) { PrivacyText("专业排名与绩点证明 ›") }
                 }
             }
         }
@@ -317,14 +335,20 @@ fun ScorePage(
                 }
             }
         } else {
-            recordsByTerm.forEach { (term, termRecords) ->
+            recordsByTerm.forEachIndexed { index, (term, termRecords) ->
+                // 默认折叠规则：最新两学期（index 0/1）展开，其余折叠；点一下取反
+                val collapsed = (index >= 2) xor (term in toggledTerms)
                 item(key = "term:$term") {
-                    TermHeader(term, termRecords.size)
+                    TermHeader(term, termRecords.size, expanded = !collapsed, onToggle = {
+                        toggledTerms = if (term in toggledTerms) toggledTerms - term else toggledTerms + term
+                    })
                 }
-                // 注意：不使用显式 key。同一学期可能存在 courseCode+courseName 相同的
-                // 重修/补考记录，若用内容 key 会重复导致 LazyColumn 崩溃；默认 index key 绝对安全。
-                items(count = termRecords.size) { index ->
-                    ScoreRecordCard(termRecords[index])
+                if (!collapsed) {
+                    // 注意：不使用显式 key。同一学期可能存在 courseCode+courseName 相同的
+                    // 重修/补考记录，若用内容 key 会重复导致 LazyColumn 崩溃；默认 index key 绝对安全。
+                    items(count = termRecords.size) { recordIndex ->
+                        ScoreRecordCard(termRecords[recordIndex])
+                    }
                 }
             }
         }
@@ -339,6 +363,12 @@ fun ScorePage(
         }
     }
 }
+
+/**学期折叠开关的持久化：List<String> 直接可存。 */
+private val ScoreToggledTermsSaver = listSaver<List<String>, String>(
+    save = { it.toList() },
+    restore = { it.toList() },
+)
 
 /** 模拟行输入的持久化：List<Pair<String, String>> 展平为字符串列表（旋转重建不丢）。 */
 private val ScoreSimulationRowsSaver = listSaver<List<Pair<String, String>>, String>(
@@ -365,7 +395,7 @@ private fun ScoreSimulationSection(
 ) {
     val validRowCount = simulationRows.count { (score, credit) -> xmuSimulatedScoreRecord(score, credit) != null }
     SectionCard("模拟成绩") {
-        Text(
+        PrivacyText(
             "填入预计成绩与学分，平均和加权四项都会实时更新；模拟课不计入已修总学分。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -378,7 +408,7 @@ private fun ScoreSimulationSection(
                 OutlinedTextField(
                     value = scoreText,
                     onValueChange = { onRowsChanged(simulationRows.withRowReplaced(index, it to creditText)) },
-                    label = { Text("预计成绩") },
+                    label = { PrivacyText("预计成绩") },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -386,7 +416,7 @@ private fun ScoreSimulationSection(
                 OutlinedTextField(
                     value = creditText,
                     onValueChange = { onRowsChanged(simulationRows.withRowReplaced(index, scoreText to it)) },
-                    label = { Text("学分") },
+                    label = { PrivacyText("学分") },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -394,14 +424,14 @@ private fun ScoreSimulationSection(
                 OutlinedButton(
                     onClick = { onRowsChanged(simulationRows.filterIndexed { i, _ -> i != index }) },
                     contentPadding = PaddingValues(horizontal = 12.dp),
-                ) { Text("删除") }
+                ) { PrivacyText("删除") }
             }
         }
         OutlinedButton(onClick = { onRowsChanged(simulationRows + ("" to "")) }) {
-            Text("+ 添加一门")
+            PrivacyText("+ 添加一门")
         }
         if (simulationRows.isNotEmpty() && validRowCount == 0) {
-            Text(
+            PrivacyText(
                 "当前行尚未计入：成绩需在 0–100、学分需大于 0",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
@@ -436,32 +466,32 @@ fun NotificationSettingsPage(
             systemEnabled || pushEnabled || qqEnabled -> "当前状态：已配置"
             else -> "当前状态：未开启"
         }
-        Text(status, fontWeight = FontWeight.Bold)
+        PrivacyText(status, fontWeight = FontWeight.Bold)
         StatusRow("本机通知", notificationChannelStatus(systemEnabled, false))
         StatusRow("微信 PushPlus", notificationChannelStatus(pushEnabled, pushToken.isBlank()))
         StatusRow("QQ 邮箱", notificationChannelStatus(qqEnabled, qqSender.isBlank() || qqPassword.isBlank() || qqRecipient.isBlank()))
-        Text("温馨提示：PushPlus 会收取约 3.5 元实名费用；QQ 邮箱免费使用。", color = themeWarning())
+        PrivacyText("温馨提示：PushPlus 会收取约 3.5 元实名费用；QQ 邮箱免费使用。", color = themeWarning())
         ToggleRow("开启系统通知", systemEnabled) { systemEnabled = it }
         ToggleRow("开启微信通知", pushEnabled) { pushEnabled = it }
-        OutlinedTextField(value = pushToken, onValueChange = { pushToken = it }, label = { Text("PushPlus Token") }, placeholder = { Text("从 PushPlus 个人中心复制 token") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = pushToken, onValueChange = { pushToken = it }, label = { PrivacyText("PushPlus Token") }, placeholder = { PrivacyText("从 PushPlus 个人中心复制 token") }, modifier = Modifier.fillMaxWidth())
         ToggleRow("开启 QQ 邮箱提醒", qqEnabled) { qqEnabled = it }
-        OutlinedTextField(value = qqSender, onValueChange = { qqSender = it }, label = { Text("发件 QQ 邮箱") }, placeholder = { Text("例如 student@example.invalid") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = qqPassword, onValueChange = { qqPassword = it }, label = { Text("SMTP 授权码") }, placeholder = { Text("不是 QQ 密码，是邮箱生成的授权码") }, modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation())
-        OutlinedTextField(value = qqRecipient, onValueChange = { qqRecipient = it }, label = { Text("收件邮箱") }, placeholder = { Text("接收提醒的邮箱") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = qqSender, onValueChange = { qqSender = it }, label = { PrivacyText("发件 QQ 邮箱") }, placeholder = { PrivacyText("例如 student@example.invalid") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = qqPassword, onValueChange = { qqPassword = it }, label = { PrivacyText("SMTP 授权码") }, placeholder = { PrivacyText("不是 QQ 密码，是邮箱生成的授权码") }, modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation())
+        OutlinedTextField(value = qqRecipient, onValueChange = { qqRecipient = it }, label = { PrivacyText("收件邮箱") }, placeholder = { PrivacyText("接收提醒的邮箱") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(
             value = qqPorts,
             onValueChange = { qqPorts = it.filter { ch -> ch.isDigit() || ch == ',' } },
-            label = { Text("SMTP 端口") },
-            placeholder = { Text("465,587") },
+            label = { PrivacyText("SMTP 端口") },
+            placeholder = { PrivacyText("465,587") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             isError = portsInvalid,
             supportingText = {
-                if (portsInvalid) Text("端口需为逗号分隔的 1-65535 数字，例如 465,587")
+                if (portsInvalid) PrivacyText("端口需为逗号分隔的 1-65535 数字，例如 465,587")
             },
         )
-        Text("可填写多个端口，例如 465,587；465 使用 SSL，587 使用 STARTTLS。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        PrivacyText("可填写多个端口，例如 465,587；465 使用 SSL，587 使用 STARTTLS。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = {
@@ -471,7 +501,7 @@ fun NotificationSettingsPage(
                     onSaved(saved)
                 },
                 modifier = Modifier.weight(1f),
-            ) { Text("保存通知设置") }
+            ) { PrivacyText("保存通知设置") }
             OutlinedButton(
                 onClick = {
                     // 与保存按钮同一校验：onTest 内部会持久化设置，
@@ -481,163 +511,11 @@ fun NotificationSettingsPage(
                     onTest(saved)
                 },
                 modifier = Modifier.weight(1f),
-            ) { Text("发送测试通知") }
+            ) { PrivacyText("发送测试通知") }
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Suppress("UNUSED_PARAMETER")
-@Composable
-private fun TutorialPageLegacy(scrollState: ScrollState, navigate: (String) -> Unit) {
-    val scope = rememberCoroutineScope()
-    // 不再用手写像素偏移：教程内容、系统字体缩放和不同屏幕高度都会改变每张卡片的
-    // 实际高度。BringIntoViewRequester 由 Compose 根据真实布局向外层 ScrollState
-    // 滚动，新增/改写教程段落时不需要重新维护一串容易失准的数字。
-    val sectionTitles = listOf(
-        "签到启用教程", "开启监控", "磁贴快捷开关", "开启自动签到", "查看课表", "导出日历",
-        "考试安排与提醒", "成绩与长图分享", "模拟成绩", "桌面小卡片", "设置微信通知",
-        "设置 QQ 邮箱通知", "下载课件", "外观主题", "常见问题",
-    )
-    val anchors = remember(sectionTitles) {
-        sectionTitles.associateWith { BringIntoViewRequester() }
-    }
-    SectionCard("教程") {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            anchors.forEach { (title, _) ->
-                OutlinedButton(
-                    onClick = { scope.launch { anchors.getValue(title).bringIntoView() } },
-                    shape = RoundedCornerShape(999.dp),
-                ) {
-                    Text(title, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-        TutorialSection("签到启用教程", modifier = Modifier.bringIntoViewRequester(anchors.getValue("签到启用教程"))) {
-            Text("1. 在首页输入学号和密码，点击登录。")
-            Text("2. 登录成功后点击启动监控。")
-            Text("3. 需要自动处理数字签到和雷达签到时，再打开开启自动签到。")
-            Text("账号、Cookie、通知配置和下载目录只保存在本机。")
-            OutlinedButton(onClick = { navigate("首页") }) { Text("前往首页") }
-        }
-        TutorialSection("开启监控", modifier = Modifier.bringIntoViewRequester(anchors.getValue("开启监控"))) {
-            Text("1. 监控会按策略页的默认轮询间隔检查签到。")
-            Text("2. 检测到签到后会在签到情况页展示课程、类型、剩余时间和状态。")
-            Text("3. 手机端需要允许通知和后台运行，否则系统可能会限制常驻。")
-            OutlinedButton(onClick = { navigate("签到情况") }) { Text("查看签到情况") }
-        }
-        TutorialSection("磁贴快捷开关", modifier = Modifier.bringIntoViewRequester(anchors.getValue("磁贴快捷开关"))) {
-            Text("1. 下拉通知栏展开快捷设置面板，长按编辑，找到「签到监控」磁贴。")
-            Text("2. 把磁贴拖到常用位置，之后不打开 App 点一下就能启动或暂停监控。")
-            Text("3. 磁贴点亮表示监控运行中，灰色表示已暂停；与 App 内开关状态同步。")
-            Text("4. 未登录时磁贴不可用，点击会跳到首页提示先登录。")
-            Text("5. 长按桌面 App 图标也能看到「签到情况 / 课表 / 成绩」快捷方式直达对应页面。")
-        }
-        TutorialSection("开启自动签到", modifier = Modifier.bringIntoViewRequester(anchors.getValue("开启自动签到"))) {
-            Text("1. 自动签到只处理数字签到和雷达签到。")
-            Text("2. 二维码签到只提醒，不会自动处理。")
-            Text("3. 如果担心误操作，可以先关闭自动签到，只保留监控提醒。")
-            OutlinedButton(onClick = { navigate("策略") }) { Text("前往策略") }
-        }
-        TutorialSection("查看课表", modifier = Modifier.bringIntoViewRequester(anchors.getValue("查看课表"))) {
-            Text("1. 进入课表页后自动读取本学期排课，按周显示课程格子。")
-            Text("2. 左右滑动切换星期，顶部可以切换第几周。")
-            Text("3. 格子显示课程名、节次和当周教室，不显示老师。")
-            Text("4. 点击某个课程格子，可以看到老师、完整周次和平行教学班详情。")
-            Text("5. 平行教学班（同一时间多个教室）会在格子显示第一个教室，点开看全部。")
-            OutlinedButton(onClick = { navigate("课表") }) { Text("前往课表") }
-        }
-        TutorialSection("导出日历", modifier = Modifier.bringIntoViewRequester(anchors.getValue("导出日历"))) {
-            Text("1. 课表页右上角点击「导出日历」，选择系统日历或邮件应用打开即可导入。")
-            Text("2. 单双周课程会按隔周重复写入，断档的周次不会多排。")
-            Text("3. 上课日期以课表页校准后的开学日为准，校准过再导出更准确。")
-            Text("4. 节假日调休由学校另行安排，导入的课程不会自动跳过。")
-            OutlinedButton(onClick = { navigate("课表") }) { Text("前往课表") }
-        }
-        TutorialSection("考试安排与提醒", modifier = Modifier.bringIntoViewRequester(anchors.getValue("考试安排与提醒"))) {
-            Text("1. 考试安排页查看各学期考试的时间、地点和座位，顶栏可切换学期，下拉即刷新。")
-            Text("2. 首次进入显示骨架占位，读取完成后展示列表。")
-            Text("3. 在策略页开启「考试提醒」并设置提前分钟数，到点会发通知提醒。")
-            Text("4. Android 12 及以上需要在系统设置允许「闹钟和提醒」权限，点击策略页的设置入口可直接跳转。")
-            Text("5. 可选「全屏提醒」：锁屏时也能弹出横幅（需要系统允许全屏通知）。")
-            OutlinedButton(onClick = { navigate("考试安排") }) { Text("前往考试安排") }
-        }
-        TutorialSection("成绩与长图分享", modifier = Modifier.bringIntoViewRequester(anchors.getValue("成绩与长图分享"))) {
-            Text("1. 成绩页点击刷新按钮拉取各学期成绩，卡片显示课程、成绩、学分与绩点。")
-            Text("2. 页面顶部汇总面板展示总学分、平均绩点等整体情况。")
-            Text("3. 点击「分享长图」可把成绩单生成为一张长图，保存或分享给他人。")
-            Text("4. 成绩数据按账号加密保存在本机，换账号登录会自动清空。")
-            OutlinedButton(onClick = { navigate("成绩") }) { Text("前往成绩") }
-        }
-        TutorialSection("模拟成绩", modifier = Modifier.bringIntoViewRequester(anchors.getValue("模拟成绩"))) {
-            Text("1. 成绩页顶部点击「模拟成绩」，页面跳到底部的模拟区。")
-            Text("2. 填入预计出分课程的成绩（0-100）和学分，可添加多行，每行可单独删除。")
-            Text("3. 面板逐项显示「当前 → 计入后」：平均分数、平均绩点按课程等权，加权分数、加权绩点按学分；模拟课不计入已修总学分。")
-            Text("4. 空、非法或超范围的行自动跳过，不影响其余计算。")
-            Text("5. 换算采用虾大官方 4.0 分制，纯本地计算，不上传任何数据。")
-            OutlinedButton(onClick = { navigate("成绩") }) { Text("前往成绩") }
-        }
-        TutorialSection("桌面小卡片", modifier = Modifier.bringIntoViewRequester(anchors.getValue("桌面小卡片"))) {
-            Text("1. 在策略页开启「桌面小卡片」，然后点击「添加到桌面」。")
-            Text("2. 系统会弹出固定小部件窗口，选一个位置放置即可。")
-            Text("3. 小卡片显示今天的课程、时间和地点，点击可打开 App 课表页。")
-            Text("4. 课表刷新后小卡片会自动更新；在策略页关闭开关可隐藏内容。")
-            Text("5. 如果没弹出添加窗口，可以长按手机桌面空白处 -> 小部件 -> 找到 虾大助手。")
-            OutlinedButton(onClick = { navigate("策略") }) { Text("前往策略") }
-        }
-        TutorialSection("设置微信通知", modifier = Modifier.bringIntoViewRequester(anchors.getValue("设置微信通知"))) {
-            Text("1. 打开通知页，开启微信通知。")
-            Text("2. 填入 PushPlus Token，保存后点击发送测试通知。")
-            Text("3. 收到测试消息后，说明微信通知可用。")
-            Text("PushPlus 会收取约 3.5 元实名费用。", color = themeWarning(), fontWeight = FontWeight.Bold)
-            OutlinedButton(onClick = { navigate("通知") }) { Text("前往通知") }
-        }
-        TutorialSection("设置 QQ 邮箱通知", modifier = Modifier.bringIntoViewRequester(anchors.getValue("设置 QQ 邮箱通知"))) {
-            Text("1. 在 QQ 邮箱网页版开启 SMTP 服务，并生成授权码。")
-            Text("网页版", color = themeWarning(), fontWeight = FontWeight.Bold)
-            Text("打开网页 -> 点击设置 -> 点击账号与安全 -> 安全设置 -> 下滑找到生成入口。")
-            Text("2. 回到通知页，填写发件 QQ 邮箱、SMTP 授权码和收件邮箱。")
-            Text("3. QQ 邮箱免费使用；授权码不是 QQ 密码。")
-            Text("4. 保存后点击发送测试通知，确认邮箱能收到提醒。")
-            OutlinedButton(onClick = { navigate("通知") }) { Text("前往通知") }
-        }
-        TutorialSection("下载课件", modifier = Modifier.bringIntoViewRequester(anchors.getValue("下载课件"))) {
-            Text("1. 进入课程课件页，先点击刷新课程。")
-            Text("2. 选择学年、学期和课程，再点击刷新课件。")
-            Text("3. 勾选需要的课件，点击下载；也可以点击全选后统一下载。")
-            Text("4. 文件会尽量直接下载；视频、网页、H5 或 SCORM 无法直接下载时，会保存平台入口。")
-            Text("5. 下载失败的课件会在卡片里显示原因，例如平台未提供地址、登录过期、网络失败。")
-            OutlinedButton(onClick = { navigate("课程课件") }) { Text("前往课程课件") }
-        }
-        TutorialSection("外观主题", modifier = Modifier.bringIntoViewRequester(anchors.getValue("外观主题"))) {
-            Text("1. 策略页底部的「外观」可选浅色、深色或跟随系统。")
-            Text("2. 切换即时生效并自动记忆，下次启动保持上次选择。")
-            Text("3. 桌面小卡片会同步使用深色配色，夜间不刺眼。")
-            OutlinedButton(onClick = { navigate("策略") }) { Text("前往策略") }
-        }
-        TutorialSection("常见问题", modifier = Modifier.bringIntoViewRequester(anchors.getValue("常见问题"))) {
-            Text(
-                "重要：系统后台限制无法绕过。手机锁屏后，Android 系统（尤其国产系统）可能延迟或停止后台服务，自动签到和提醒最多可能延迟约 6 小时（系统数据同步周期）。",
-                color = themeWarning(),
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "建议：把 虾大助手 加入电池不限制 / 允许后台运行白名单，保持通知开启；重要签到请同时手动确认，不要只依赖自动签到。",
-                color = themeWarning(),
-                fontWeight = FontWeight.Bold,
-            )
-            Text("关闭 App 后，监控服务会尽量在后台运行；彻底退出需要在系统后台或通知里停止。")
-            Text("如果课程或课件刷不出来，先重新登录，再刷新课程。")
-            Text("如果通知测试失败，优先检查 Token、SMTP 授权码、收件邮箱和网络。")
-            Text("如果平台没有提供资源地址，软件不会绕过平台限制，只会保存入口并显示原因。")
-        }
-    }
-}
 
 /**
  * 本地可编辑的布尔副本，并在每次进入组合时以「已保存值」为准重同步。
@@ -646,7 +524,7 @@ private fun TutorialPageLegacy(scrollState: ScrollState, navigate: (String) -> U
  * 做失效检测，**状态恢复路径不校验**——SaveableStateHolder 恢复出的旧值优先于 init，
  * 因此跨页面保留的本地副本会一直沿用旧值。策略页正是这种情况：首页改写了同一份
  * RollcallSettings 的自动签到开关，回到策略页仍是旧值，按「确认更改」就把刚开启的
- * 自动签到静默写回（v1.6.1 引入 PageStateHost 后可达）。LaunchedEffect 在每次进入
+ *自动签到静默写回（PageStateHost 后可达）。LaunchedEffect 在每次进入
  * 组合时必跑，故用它重同步；值未变时写入同值不触发重组。
  */
 @Composable
@@ -698,7 +576,6 @@ fun StrategyPage(
     themeMode: String,
     onThemeModeChanged: (String) -> Unit,
     onSaved: (RollcallSettings) -> Unit,
-    onWidgetToggle: (Boolean) -> Unit,
     onAddWidget: () -> Unit,
     onManualWeekSet: (Int) -> Unit,
     examReminder: ExamReminderSettings = ExamReminderSettings(),
@@ -733,54 +610,54 @@ fun StrategyPage(
     var reminderEnabled by rememberSaveable { mutableStateOf(examReminder.enabled) }
     var reminderMinutes by rememberSaveable { mutableStateOf(examReminder.advanceMinutes.toString()) }
     var reminderFullScreen by rememberSaveable { mutableStateOf(examReminder.fullScreenEnabled) }
-    val reminderMinutesInvalid = reminderMinutes.toIntOrNull()?.let { it in 0..60 } != true && reminderMinutes.isNotBlank()
+    val reminderMinutesInvalid = reminderMinutes.toIntOrNull()?.let { it in 0..EXAM_REMINDER_MAX_MINUTES } != true && reminderMinutes.isNotBlank()
     fun emitReminder() {
         onExamReminderChanged(
             ExamReminderSettings(
                 enabled = reminderEnabled,
-                advanceMinutes = reminderMinutes.toIntOrNull()?.coerceIn(0, 60) ?: 30,
+                advanceMinutes = reminderMinutes.toIntOrNull()?.coerceIn(0, EXAM_REMINDER_MAX_MINUTES) ?: 30,
                 fullScreenEnabled = reminderFullScreen,
             ),
         )
     }
-    SectionCard("策略") {
+    SectionCard("设置") {
         OutlinedTextField(
             value = interval,
             onValueChange = { interval = it.filter(Char::isDigit) },
-            label = { Text("默认轮询间隔（1-300 秒）") },
+            label = { PrivacyText("默认轮询间隔（1-300 秒）") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             isError = intervalInvalid,
             supportingText = {
-                if (intervalInvalid) Text("请输入 1-300 的整数；留空将使用默认 30 秒")
+                if (intervalInvalid) PrivacyText("请输入 1-300 的整数；留空将使用默认 30 秒")
             },
         )
-        Text(
+        PrivacyText(
             "这里可分别选择自动处理类型；保存后会与首页快捷开关同步。首页快捷开关会同时开启或关闭数字、雷达签到。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         ToggleRow("数字签到自动处理", number.value) { number.value = it }
         ToggleRow("雷达签到自动处理", radar.value) { radar.value = it }
-        Text("自动处理时机", fontWeight = FontWeight.Bold)
+        PrivacyText("自动处理时机", fontWeight = FontWeight.Bold)
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             listOf(
                 WAIT_BEFORE_ANSWER_NONE to "检测到立即处理",
                 WAIT_BEFORE_ANSWER_COUNT to "达到人数",
                 WAIT_BEFORE_ANSWER_PERCENT to "达到比例",
             ).forEach { (value, label) ->
-                OutlinedButton(onClick = { waitMode = value }, enabled = waitMode != value) { Text(label) }
+                OutlinedButton(onClick = { waitMode = value }, enabled = waitMode != value) { PrivacyText(label) }
             }
         }
         if (waitMode == WAIT_BEFORE_ANSWER_COUNT) {
             OutlinedTextField(
                 value = waitCount,
                 onValueChange = { waitCount = it.filter(Char::isDigit) },
-                label = { Text("达到人数后自动处理（至少 1 人）") },
+                label = { PrivacyText("达到人数后自动处理（至少 1 人）") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 isError = waitInputError != null,
-                supportingText = { if (waitInputError != null) Text(waitInputError) },
+                supportingText = { if (waitInputError != null) PrivacyText(waitInputError) },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -788,11 +665,11 @@ fun StrategyPage(
             OutlinedTextField(
                 value = waitPercent,
                 onValueChange = { waitPercent = it.filter(Char::isDigit) },
-                label = { Text("达到比例后自动处理（1-100%）") },
+                label = { PrivacyText("达到比例后自动处理（1-100%）") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 isError = waitInputError != null,
-                supportingText = { if (waitInputError != null) Text(waitInputError) },
+                supportingText = { if (waitInputError != null) PrivacyText(waitInputError) },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -820,10 +697,10 @@ fun StrategyPage(
             },
             modifier = Modifier.fillMaxWidth(),
             enabled = strategyRollcallSaveEnabled(interval, waitMode, waitCount, waitPercent),
-        ) { Text("保存策略更改") }
-        Text(
+        ) { PrivacyText("保存设置更改") }
+        PrivacyText(
             if (hasUnsavedRollcallChanges) {
-                "当前修改尚未保存；点击“保存策略更改”后生效。"
+                "当前修改尚未保存；点击“保存设置更改”后生效。"
             } else {
                 "当前显示已保存设置。"
             },
@@ -832,7 +709,7 @@ fun StrategyPage(
         )
     }
     SectionCard("考试提醒") {
-        Text(
+        PrivacyText(
             "每场未完成考试在开考前提醒一次（强提醒：响铃 + 震动）。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -845,13 +722,13 @@ fun StrategyPage(
             // 防抖提交：仅更新本地文本，停止输入 500ms 后由 LaunchedEffect 提交一次，
             // 避免逐字符触发全量闹钟重排（100 次 cancelAll + 全量 setExact）与 gate 占用丢值。
             onValueChange = { reminderMinutes = it.filter(Char::isDigit) },
-            label = { Text("提前提醒时间（0-60 分钟）") },
+            label = { PrivacyText("提前提醒时间（0-$EXAM_REMINDER_MAX_MINUTES 分钟）") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             isError = reminderMinutesInvalid,
             supportingText = {
-                if (reminderMinutesInvalid) Text("请输入 0-60 的整数")
+                if (reminderMinutesInvalid) PrivacyText("请输入 0-$EXAM_REMINDER_MAX_MINUTES 的整数")
             },
         )
         LaunchedEffect(reminderMinutes) {
@@ -867,7 +744,7 @@ fun StrategyPage(
             reminderFullScreen = it
             emitReminder()
         }
-        Text(
+        PrivacyText(
             "全屏提醒需要系统授权「闹钟与提醒」和「全屏通知」；未授权时仍会以高优先级通知提醒。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -875,22 +752,22 @@ fun StrategyPage(
             OutlinedButton(
                 onClick = onOpenExamAlarmSettings,
                 modifier = Modifier.weight(1f),
-            ) { Text("授权精确闹钟") }
+            ) { PrivacyText("授权精确闹钟") }
             OutlinedButton(
                 onClick = onOpenFullScreenSettings,
                 modifier = Modifier.weight(1f),
-            ) { Text("授权全屏通知") }
+            ) { PrivacyText("授权全屏通知") }
         }
     }
     SectionCard("课表周次") {
-        Text(
+        PrivacyText(
             "课表默认按教务系统自动判断当前周次；如果判断不准（如假期或新学期），" +
                 "校准一次当前周次即可，之后仍会按日期自动推进（明天同周、下周自动 +1）。" +
                 "校准不是关闭自动判断，两者同时生效。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         // 状态行：自动判断始终开启；手动校准只是额外基准，不与之对立
-        Text(
+        PrivacyText(
             if (manualWeek == 0) {
                 "当前：自动判断周次"
             } else {
@@ -901,7 +778,7 @@ fun StrategyPage(
         )
         var calibrating by remember { mutableStateOf(false) }
         if (calibrating) {
-            Text("点击指定当前是第几周：", fontWeight = FontWeight.Bold)
+            PrivacyText("点击指定当前是第几周：", fontWeight = FontWeight.Bold)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
@@ -920,19 +797,19 @@ fun StrategyPage(
                         modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                     ) {
-                        Text("$week", fontWeight = if (manualWeek == week) FontWeight.Bold else FontWeight.Medium)
+                        PrivacyText("$week", fontWeight = if (manualWeek == week) FontWeight.Bold else FontWeight.Medium)
                     }
                 }
             }
             OutlinedButton(
                 onClick = { calibrating = false },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("取消") }
+            ) { PrivacyText("取消") }
         } else {
             Button(
                 onClick = { calibrating = true },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (manualWeek == 0) "校准当前周次" else "重新校准当前周次") }
+            ) { PrivacyText(if (manualWeek == 0) "校准当前周次" else "重新校准当前周次") }
         }
         if (manualWeek != 0) {
             OutlinedButton(
@@ -941,25 +818,19 @@ fun StrategyPage(
                     onManualWeekSet(0)
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("清除校准，恢复纯自动判断") }
+            ) { PrivacyText("清除校准，恢复纯自动判断") }
         }
     }
     SectionCard("桌面小卡片") {
-        Text("在手机桌面添加「今日课程」小卡片，不用打开 App 也能看到当天课程、时间和地点。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-// 本地乐观状态：settings.widgetEnabled 非组合状态，拨动后若不本地回显，
-        // 开关要等下一次无关重组（如 toast）才更新，看起来像没拨动
-        var widgetEnabled by remember { mutableStateOf(settings.widgetEnabled) }
-        ToggleRow("显示桌面小卡片", widgetEnabled) { enabled ->
-            widgetEnabled = enabled
-            onWidgetToggle(enabled)
-        }
+        PrivacyText("在手机桌面添加「今日课程」小卡片，不用打开 App 也能看到当天课程、时间和地点。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 删除总开关，改由系统桌面直接添加。
         Button(
             onClick = onAddWidget,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("添加到桌面") }
+        ) { PrivacyText("添加到桌面") }
     }
     SectionCard("外观") {
-        Text("选择主题模式：", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        PrivacyText("选择主题模式：", color = MaterialTheme.colorScheme.onSurfaceVariant)
         OptionRow(
             label = "主题",
             options = listOf("跟随系统", "浅色", "深色"),

@@ -1,0 +1,909 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 周课表小组件的外壳。
+
+     整张课表改为**原生控件 + 权重分配**，不再用 Canvas 画位图。
+     原因：位图必须知道卡片的确切像素尺寸才能 1:1 铺满，而桌面只肯报一个 min/max 区间
+     （本机报 206/284，实际卡片比两者都高），位图比例一旦对不上，fitCenter 就在一侧留白、
+     fitXY 就把字拉变形 —— 这是 v69~v73 反复失败的根因。
+
+     现在的做法：11 个节次的格子用 layout_weight=1 等分高度，7 个星期用 layout_weight=1
+     等分宽度，课程块按「跨几个节次」取对应权重的布局。高度和宽度全由容器分配，
+     没有任何缩放，因此换机器、换桌面网格、改系统字体大小都不会错位或变形。 -->
+<!--根改为 FrameLayout —— 第二层是「课程详情」覆盖层，在组件内部直接绘制，
+     点击课程块时由 Provider 重绘这份 RemoteViews 把覆盖层显示出来，
+     不启动任何 Activity、不覆盖桌面、不需要悬浮窗权限。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/week_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/schedule_widget_bg"
+    android:clickable="false"
+    android:longClickable="false"
+    android:duplicateParentState="false"
+    android:stateListAnimator="@null">
+
+<LinearLayout
+    android:id="@+id/week_content"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- 顶栏：左箭头 + 居中周次 + 右箭头，右上角「看今天」。
+         四处文字整体放大一档；栏高 38dp；
+         左右两块等宽，周次严格居中。 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- 左上角标题「 周课表」（前导空格）。左右两块严格等宽 70dp，
+             中间 weight=1 且 gravity=center，使「第N周」居中于整张卡片。 -->
+        <TextView
+            android:id="@+id/week_nav_title_left"
+            android:layout_width="70dp"
+            android:layout_height="38dp"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:paddingLeft="4dp"
+            android:text="@string/widget_week_title"
+            android:textColor="@color/widget_primary_text"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/week_nav_prev"
+                android:layout_width="28dp"
+                android:layout_height="38dp"
+                android:contentDescription="上一周"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="‹"
+                android:textColor="@color/widget_accent"
+                android:textSize="22sp" />
+
+            <TextView
+                android:id="@+id/week_nav_title"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:paddingLeft="6dp"
+                android:paddingRight="6dp"
+                android:textColor="@color/widget_accent"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/week_nav_next"
+                android:layout_width="28dp"
+                android:layout_height="38dp"
+                android:contentDescription="下一周"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="›"
+                android:textColor="@color/widget_accent"
+                android:textSize="22sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/week_nav_today"
+            android:layout_width="70dp"
+            android:layout_height="38dp"
+            android:contentDescription="看今天"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="看今天"
+            android:textColor="@color/widget_secondary_text"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!--表头：左侧月份 + 七格「星期 / 日号」。宽度与下面的表格一一对应 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="26dp"
+        android:orientation="horizontal"
+        android:paddingLeft="4dp"
+        android:paddingRight="4dp">
+
+        <TextView
+            android:id="@+id/week_month"
+            android:layout_width="28dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:textColor="@color/widget_accent"
+            android:textSize="8dp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/week_head_cell_0"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginLeft="1.5dp"
+            android:layout_marginRight="1.5dp"
+            android:layout_marginTop="1dp"
+            android:layout_marginBottom="1dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/week_head_w_0"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8.5dp" />
+
+            <TextView
+                android:id="@+id/week_head_d_0"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8dp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/week_head_cell_1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginLeft="1.5dp"
+            android:layout_marginRight="1.5dp"
+            android:layout_marginTop="1dp"
+            android:layout_marginBottom="1dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/week_head_w_1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8.5dp" />
+
+            <TextView
+                android:id="@+id/week_head_d_1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8dp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/week_head_cell_2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginLeft="1.5dp"
+            android:layout_marginRight="1.5dp"
+            android:layout_marginTop="1dp"
+            android:layout_marginBottom="1dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/week_head_w_2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8.5dp" />
+
+            <TextView
+                android:id="@+id/week_head_d_2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8dp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/week_head_cell_3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginLeft="1.5dp"
+            android:layout_marginRight="1.5dp"
+            android:layout_marginTop="1dp"
+            android:layout_marginBottom="1dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/week_head_w_3"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8.5dp" />
+
+            <TextView
+                android:id="@+id/week_head_d_3"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8dp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/week_head_cell_4"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginLeft="1.5dp"
+            android:layout_marginRight="1.5dp"
+            android:layout_marginTop="1dp"
+            android:layout_marginBottom="1dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/week_head_w_4"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8.5dp" />
+
+            <TextView
+                android:id="@+id/week_head_d_4"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8dp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/week_head_cell_5"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginLeft="1.5dp"
+            android:layout_marginRight="1.5dp"
+            android:layout_marginTop="1dp"
+            android:layout_marginBottom="1dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/week_head_w_5"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8.5dp" />
+
+            <TextView
+                android:id="@+id/week_head_d_5"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8dp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/week_head_cell_6"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginLeft="1.5dp"
+            android:layout_marginRight="1.5dp"
+            android:layout_marginTop="1dp"
+            android:layout_marginBottom="1dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/week_head_w_6"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8.5dp" />
+
+            <TextView
+                android:id="@+id/week_head_d_6"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="8dp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- 表格主体：11 个节次 × 7 天。高度按权重等分，课程块按权重跨行。
+         课程块由 Provider 用 addView 往 7 个列容器里塞（空格子 weight=1，课程块 weight=跨度）。 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingLeft="4dp"
+        android:paddingRight="4dp"
+        android:paddingBottom="2dp">
+
+        <LinearLayout
+            android:id="@+id/week_body"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal">
+
+            <!-- 左侧节次列：每格「节号 + 起始时间」两行（v76 恢复）。
+                 11 格 height=0dp + weight=1，与右侧 7 列的空格子逐行对齐。 -->
+            <LinearLayout
+                android:layout_width="28dp"
+                android:layout_height="match_parent"
+                android:orientation="vertical">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_3"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_3"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_4"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_4"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_5"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_5"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_6"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_6"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_7"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_7"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_8"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_8"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_9"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_9"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_10"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_10"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/week_grid_line"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/week_time_s_11"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="9dp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/week_time_11"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@color/widget_secondary_text"
+                        android:textSize="7dp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/week_col_0"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical" />
+            <LinearLayout
+                android:id="@+id/week_col_1"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical" />
+            <LinearLayout
+                android:id="@+id/week_col_2"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical" />
+            <LinearLayout
+                android:id="@+id/week_col_3"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical" />
+            <LinearLayout
+                android:id="@+id/week_col_4"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical" />
+            <LinearLayout
+                android:id="@+id/week_col_5"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical" />
+            <LinearLayout
+                android:id="@+id/week_col_6"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical" />
+        </LinearLayout>
+
+        <!--空态 / 未同步：正常渲染时 GONE -->
+        <TextView
+            android:id="@+id/week_empty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:lineSpacingExtra="2dp"
+            android:textColor="@color/widget_secondary_text"
+            android:textSize="9dp"
+            android:visibility="gone" />
+    </FrameLayout>
+
+</LinearLayout>
+
+    <!--课程详情覆盖层。默认 gone，点课程块后由 Provider 填内容并显示。
+         点遮罩或「关闭」收起；点卡片本体无动作（避免冒泡把卡片关掉）。
+         与「今日课程」组件里的同名区块保持一致，id 相同、版式相同。 -->
+    <LinearLayout
+        android:id="@+id/detail_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/widget_detail_overlay_bg"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="14dp"
+        android:duplicateParentState="false"
+        android:stateListAnimator="@null"
+        android:visibility="invisible">
+
+        <LinearLayout
+            android:id="@+id/detail_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_detail_card_bg"
+            android:orientation="vertical"
+            android:duplicateParentState="false"
+            android:stateListAnimator="@null"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="6dp">
+
+            <TextView
+                android:id="@+id/detail_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="2"
+                android:textColor="@color/widget_primary_text"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/detail_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/detail_time"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_primary_text"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/detail_section"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_primary_text"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/detail_weeks"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="2"
+                android:textColor="@color/widget_primary_text"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/detail_room"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="2"
+                android:textColor="@color/widget_primary_text"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/detail_teacher"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_primary_text"
+                android:textSize="11sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:gravity="end|center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/detail_open"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:padding="9dp"
+                    android:text="打开课表"
+                    android:textColor="@color/widget_accent"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/detail_close"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:padding="9dp"
+                    android:text="关闭"
+                    android:textColor="@color/widget_accent"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+</FrameLayout>

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 周课表组件的静态预览图，供系统「添加小组件」列表显示。
+
+     此前只写了 previewLayout（指向真实布局，且列容器是运行时 addView 填充的，
+     预览里只会是一张空表格）。部分桌面不实现 Android 12 的 previewLayout 动态渲染，
+     只认 previewImage，于是这个组件在列表里根本不出现 —— 表现为「只有一个小组件」。
+     改成一张独立的静态预览图，与今日课程组件的 previewImage 一一对应。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="220dp"
+    android:height="196dp"
+    android:viewportWidth="220"
+    android:viewportHeight="196">
+
+    <!--卡片底色 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2 H208 Q218,2 218,12 V184 Q218,194 208,194 H12 Q2,194 2,184 V12 Q2,2 12,2 Z" />
+
+    <!--顶栏：周课表 / 第N周 / 看今天 -->
+    <path
+        android:fillColor="#2F5C93"
+        android:pathData="M13,12 H44 V20 H13 Z M91,12 H129 V20 H91 Z M185,14 H207 V19 H185 Z" />
+    <path
+        android:fillColor="#8FA9C4"
+        android:pathData="M78,15 H84 V18 H78 Z M136,15 H142 V18 H136 Z" />
+
+    <!--表头：月份 + 七个星期，今天那格高亮 -->
+    <path
+        android:fillColor="#8FA9C4"
+        android:pathData="M15,29 H31 V33 H15 Z M40,28 H53 V31 H40 Z M66,28 H79 V31 H66 Z M92,28 H105 V31 H92 Z M118,28 H131 V31 H118 Z M144,28 H157 V31 H144 Z M170,28 H183 V31 H170 Z M196,28 H209 V31 H196 Z" />
+    <path
+        android:fillColor="#EAF1F8"
+        android:pathData="M62,25 H102 V42 H62 Z" />
+    <path
+        android:fillColor="#2F5C93"
+        android:pathData="M70,28 H83 V31 H70 Z M70,34 H83 V38 H70 Z" />
+    <path
+        android:fillColor="#8FA9C4"
+        android:pathData="M40,34 H53 V37 H40 Z M118,34 H131 V37 H118 Z M144,34 H157 V37 H144 Z M170,34 H183 V37 H170 Z M196,34 H209 V37 H196 Z" />
+
+    <!--左侧节次列：节号 + 起始时间 -->
+    <path
+        android:fillColor="#9BB3CC"
+        android:pathData="M15,53 H30 V55 H15 Z M15,58 H30 V60 H15 Z M15,75 H30 V77 H15 Z M15,80 H30 V82 H15 Z M15,97 H30 V99 H15 Z M15,102 H30 V104 H15 Z M15,119 H30 V121 H15 Z M15,124 H30 V126 H15 Z M15,141 H30 V143 H15 Z M15,146 H30 V148 H15 Z M15,163 H30 V165 H15 Z M15,168 H30 V170 H15 Z" />
+
+    <!--网格横线与竖线 -->
+    <path
+        android:fillColor="#E7EDF3"
+        android:pathData="M34,45 H210 V46 H34 Z M34,67 H210 V68 H34 Z M34,89 H210 V90 H34 Z M34,111 H210 V112 H34 Z M34,133 H210 V134 H34 Z M34,155 H210 V156 H34 Z M34,177 H210 V178 H34 Z" />
+    <path
+        android:fillColor="#EDF2F7"
+        android:pathData="M34,45 H35 V178 H34 Z M59,45 H60 V178 H59 Z M84,45 H85 V178 H84 Z M109,45 H110 V178 H109 Z M134,45 H135 V178 H134 Z M159,45 H160 V178 H159 Z M184,45 H185 V178 H184 Z M209,45 H210 V178 H209 Z" />
+
+    <!--课程块：淡色底 + 左侧色条 -->
+    <path
+        android:fillColor="#DCEBF3"
+        android:pathData="M36,47 H57 V65 H36 Z M86,91 H107 V109 H86 Z M111,47 H132 V87 H111 Z M161,69 H182 V109 H161 Z M36,135 H57 V153 H36 Z M136,113 H157 V131 H136 Z M186,135 H207 V153 H186 Z" />
+    <path
+        android:fillColor="#F6E6D3"
+        android:pathData="M61,69 H82 V87 H61 Z M86,47 H107 V65 H86 Z M136,47 H157 V87 H136 Z M61,157 H82 V175 H61 Z M111,135 H132 V153 H111 Z" />
+    <path
+        android:fillColor="#DDEBDD"
+        android:pathData="M36,91 H57 V109 H36 Z M161,47 H182 V65 H161 Z M186,91 H207 V109 H186 Z M86,157 H107 V175 H86 Z" />
+    <path
+        android:fillColor="#3E7EA6"
+        android:pathData="M36,47 H38 V65 H36 Z M86,91 H88 V109 H86 Z M111,47 H113 V87 H111 Z M161,69 H163 V109 H161 Z M36,135 H38 V153 H36 Z M136,113 H138 V131 H136 Z M186,135 H188 V153 H186 Z" />
+    <path
+        android:fillColor="#C98A4B"
+        android:pathData="M61,69 H63 V87 H61 Z M86,47 H88 V65 H86 Z M136,47 H138 V87 H136 Z M61,157 H63 V175 H61 Z M111,135 H113 V153 H111 Z" />
+    <path
+        android:fillColor="#5C9A66"
+        android:pathData="M36,91 H38 V109 H36 Z M161,47 H163 V65 H161 Z M186,91 H188 V109 H186 Z M86,157 H88 V175 H86 Z" />
+
+    <!--课程块里的文字线 -->
+    <path
+        android:fillColor="#5A7794"
+        android:pathData="M41,51 H55 V53 H41 Z M41,56 H52 V58 H41 Z M91,95 H105 V97 H91 Z M116,51 H130 V53 H116 Z M116,56 H127 V58 H116 Z M166,73 H180 V75 H166 Z M41,139 H55 V141 H41 Z M141,117 H155 V119 H141 Z M191,139 H205 V141 H191 Z" />
+    <path
+        android:fillColor="#B08A5E"
+        android:pathData="M66,73 H80 V75 H66 Z M91,51 H105 V53 H91 Z M141,51 H155 V53 H141 Z M66,161 H80 V163 H66 Z M116,139 H130 V141 H116 Z" />
+    <path
+        android:fillColor="#6E9C77"
+        android:pathData="M41,95 H55 V97 H41 Z M166,51 H180 V53 H166 Z M191,95 H205 V97 H191 Z M91,161 H105 V163 H91 Z" />
+</vector>

@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
-        <!-- 课表缓存含教师/教室等个人排课信息，明文存储，不参与云备份 -->
+        <!--课表缓存含教师/教室等个人排课信息，明文存储，不参与云备份 -->
         <exclude
             domain="file"
             path="schedule_cache.json" />
         <exclude
             domain="file"
             path="schedule_cache.json.tmp" />
-        <!-- 最近十次签到缓存（课程名/类型/时间/本人状态）同为明文学业记录，不参与迁移 -->
+        <!--最近十次签到缓存（课程名/类型/时间/本人状态）同为明文学业记录，不参与迁移 -->
         <exclude
             domain="file"
             path="rollcall_history_cache.json" />
         <exclude
             domain="file"
             path="rollcall_history_cache.json.tmp" />
-        <!-- 桌面小卡片摘要同样不备份 -->
+        <!--桌面小卡片摘要同样不备份 -->
         <exclude
             domain="sharedpref"
             path="schedule_widget.xml" />
-        <!-- 考试安排（课程/日期/教室）与签到去重集同为明文学业记录，不参与云备份 -->
+        <!--考试安排（课程/日期/教室）与签到去重集同为明文学业记录，不参与云备份 -->
         <exclude
             domain="sharedpref"
             path="exam_cache.xml" />
@@ -31,7 +31,7 @@
         <exclude
             domain="sharedpref"
             path="xmu_assistant.xml" />
-        <!-- 外部课件下载目录：体积可达数百 MB，进云备份既超配额也无意义 -->
+        <!--外部课件下载目录：体积可达数百 MB，进云备份既超配额也无意义 -->
         <exclude
             domain="external"
             path="Download/xmu助手课件" />

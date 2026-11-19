@@ -1,68 +1,110 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--根改为 FrameLayout（曾用于叠「课程详情」覆盖层）。
+     今日课程组件的点击查看明细已整体去掉，覆盖层删除；根仍是 FrameLayout，
+     这样课程行 / 空态仍在同一层里排布，尺寸与内边距不变。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="12dp"
-    android:background="@drawable/schedule_widget_bg">
+    android:background="@drawable/schedule_widget_bg"
+    android:clickable="false"
+    android:longClickable="false"
+    android:duplicateParentState="false"
+    android:stateListAnimator="@null">
 
     <LinearLayout
-        android:id="@+id/widget_header"
+        android:id="@+id/widget_content"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <LinearLayout
+            android:id="@+id/widget_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView android:includeFontPadding="false"
+                android:id="@+id/widget_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/schedule_widget_default_title"
+                android:textColor="@color/widget_accent"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView android:includeFontPadding="false"
+                android:id="@+id/widget_week"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="12sp"
+                android:maxLines="1" />
+        </LinearLayout>
 
         <TextView android:includeFontPadding="false"
-            android:id="@+id/widget_title"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:id="@+id/widget_empty"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
             android:layout_weight="1"
-            android:text="@string/schedule_widget_default_title"
-            android:textColor="@color/widget_accent"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:maxLines="1"
-            android:ellipsize="end" />
-
-        <TextView android:includeFontPadding="false"
-            android:id="@+id/widget_week"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/schedule_widget_empty"
             android:textColor="@color/widget_secondary_text"
-            android:textSize="12sp"
-            android:maxLines="1" />
+            android:textSize="13sp"
+            android:lineSpacingExtra="5dp" />
+
+        <!--今日课程行区。weight=1 会把底部明日预告挤到卡片底，
+             改为 wrap_content 让明日区紧跟今日最后一门课后。 -->
+        <LinearLayout
+            android:id="@+id/widget_courses"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!--底部明日课程预告 —— 与今日课程用一条分隔线和次要色区分。 -->
+        <LinearLayout
+            android:id="@+id/widget_tomorrow_box"
+            android:visibility="gone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:orientation="vertical">
+
+            <!-- 分隔线。必须用 TextView 而不是 View：RemoteViews 只允许 @RemoteView 标注的控件，
+                 android.view.View 不在白名单内，会让整个布局 inflate 失败（桌面提示「无法添加小组件」）。 -->
+            <TextView android:id="@+id/widget_tomorrow_divider"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/widget_stroke" />
+
+            <!--明日课程改为「每节课一行」，节次在课程名前面；行数由渲染侧按剩余空间决定，
+                 放不下的最后一行结尾加省略号。 -->
+            <TextView android:includeFontPadding="false"
+                android:id="@+id/widget_tomorrow_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/schedule_widget_tomorrow_title"
+                android:textColor="@color/widget_secondary_text"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:maxLines="1" />
+
+            <LinearLayout
+                android:id="@+id/widget_tomorrow_lines"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </LinearLayout>
+
     </LinearLayout>
 
-    <TextView android:includeFontPadding="false"
-        android:id="@+id/widget_empty"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:text="@string/schedule_widget_empty"
-        android:textColor="@color/widget_secondary_text"
-        android:textSize="13sp"
-        android:lineSpacingExtra="5dp" />
+    <!--「今日课程」组件去掉「点击查看明细」，详情覆盖层整块删除。
+         组件内不再有任何点击区域（详情覆盖层只剩周课表组件在用）。 -->
 
-    <LinearLayout
-        android:id="@+id/widget_courses"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="vertical" />
-
-    <TextView android:includeFontPadding="false"
-        android:id="@+id/widget_footer"
-        android:visibility="gone"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/schedule_widget_open"
-        android:textColor="@color/widget_secondary_text"
-        android:textSize="11sp"
-        android:maxLines="1"
-        android:ellipsize="end" />
-
-</LinearLayout>
+</FrameLayout>

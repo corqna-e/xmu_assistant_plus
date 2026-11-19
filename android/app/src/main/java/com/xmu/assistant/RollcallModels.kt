@@ -44,6 +44,8 @@ data class NotificationSettings(
     val qqMailPassword: String = "",
     val qqMailRecipient: String = "",
     val qqMailPorts: String = "465,587",
+    /** 自定义 SMTP 主机；留空则按发件邮箱域名自动推断（默认 QQ）。 */
+    val qqMailHost: String = "",
 )
 
 data class RollcallSettings(
@@ -169,12 +171,12 @@ fun shortCoursewareError(error: String): String {
     return when {
         // 下载被平台拒绝（403 版权保护/防盗链）：不是登录过期，不应误导用户重新登录
         listOf("被平台拒绝", "无下载权限").any { it in error } -> COURSEWARE_STATUS_LIMITED
-        listOf("网络失败", "timeout", "timed out", "connection", "network", "dns", "proxy").any { it in lowered } -> "网络失败"
-        listOf("登录过期", "401", "unauthorized").any { it in lowered } -> "登录过期"
+        listOf(ErrorCodes.NETWORK_FAILURE, "timeout", "timed out", "connection", "network", "dns", "proxy").any { it in lowered } -> ErrorCodes.NETWORK_FAILURE
+        listOf(ErrorCodes.LOGIN_EXPIRED, "401", "unauthorized").any { it in lowered } -> ErrorCodes.LOGIN_EXPIRED
         listOf("forbidden", "permission").any { it in lowered } -> "平台限制"
-        listOf("登录态", "无权访问", "权限", "拒绝").any { it in error } -> "登录过期"
-        listOf("404", "not found").any { it in lowered } -> "平台未提供地址"
-        listOf("资源", "地址", "reference_id", "签名", "未返回", "缺少", "失效").any { it in error } -> "平台未提供地址"
+        listOf("登录态", "无权访问", "权限", "拒绝").any { it in error } -> ErrorCodes.LOGIN_EXPIRED
+        listOf("404", "not found").any { it in lowered } -> ErrorCodes.URL_MISSING
+        listOf("资源", "地址", "reference_id", "签名", "未返回", "缺少", "失效").any { it in error } -> ErrorCodes.URL_MISSING
         else -> COURSEWARE_STATUS_FAILED
     }
 }
@@ -182,7 +184,7 @@ fun shortCoursewareError(error: String): String {
 fun coursewareFailureStatus(error: String): String = "$COURSEWARE_STATUS_FAILED（${shortCoursewareError(error)}）"
 
 /**
- * org.json 的 optString 陷阱（体检报告 P1-5）：字段为显式 null 时返回字符串 "null"，
+ *org.json 的 optString 陷阱：字段为显式 null 时返回字符串 "null"，
  * isBlank 守卫拦不住——同轮多场签到/考试会共享去重键 "null"，第二场起被当重复丢弃，
  * 提醒随之丢失。本扩展把 JSONObject.NULL、字面量 "null"、空白一律归为缺失并返回兜底值。
  * 只用于服务端 id/关键标识字段的读取；纯展示文案无需替换。

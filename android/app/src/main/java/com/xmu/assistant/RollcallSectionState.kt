@@ -15,12 +15,12 @@ import java.util.concurrent.Executors
  *
  * 设计约定（与拆分前行为逐字对齐）：
  * - 状态字段全部 Compose 可观察（mutableStateOf），仅 UI 线程写入；
- *   后台线程只读发起时的快照值（避免跨线程读写 MutableState）。
+ *后台线程只读发起时的快照值（避免跨线程读写 MutableState）。
  * - 会话保护：网络回调先经 sessionEpoch.accepts(...) 校验世代再写状态；
- *   会话过期时经 setPendingSessionRetry 挂起一次性安全续登（recoverExpiredModule 处理）。
+ *会话过期时经 setPendingSessionRetry 挂起一次性安全续登（recoverExpiredModule 处理）。
  * - 请求统一走互斥门（RequestGate）：进行中签到 "rollcall"、最近十次 "rollcall_history"。
  * - 网络/IO 用注入的 scope（组合侧 rememberCoroutineScope，随 Activity 销毁取消），
- *   不再使用裸 thread{}（防"页面已关还弹 Toast / 写已销毁状态"）。
+ *不再使用裸 thread{}（防"页面已关还弹 Toast / 写已销毁状态"）。
  */
 internal class RollcallSectionState(
     private val activity: Activity,
@@ -140,7 +140,7 @@ internal class RollcallSectionState(
         scope.launch(Dispatchers.IO) {
             try {
                 // SWR 缓存先行：IO 线程读盘 → 有缓存先上屏（含上次更新），
-                // 网络回包后原位覆盖；不学 ExamSectionState 构造期同步 IO（体检 P2）
+                // 网络回包后原位覆盖；不学 ExamSectionState 构造期同步 IO
                 val cached = runCatching {
                     loadRollcallHistoryCache(rollcallHistoryCacheFile(activity), accountId)
                 }.getOrNull()
@@ -214,7 +214,7 @@ internal class RollcallSectionState(
                     }
                 }
             } finally {
-                // 门释放提到协程最外层（NonCancellable）：与 refresh() 同款防"门永久占用"
+                //门释放提到协程最外层（NonCancellable）：与 refresh 同款防"门永久占用"
                 withContext(kotlinx.coroutines.NonCancellable) {
                     requestGate.finish("rollcall_history")
                 }

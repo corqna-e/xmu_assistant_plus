@@ -42,10 +42,10 @@ class PendingModuleRefresh {
     }
 }
 
-fun refreshModuleForPage(page: String): RefreshModule = when (page) {
-    "首页", "签到情况" -> RefreshModule.ROLLCALL
-    "成绩" -> RefreshModule.SCORES
-    "课程课件", "缓存课件", "课程坐标" -> RefreshModule.COURSES
+fun refreshModuleForPage(page: Page): RefreshModule = when (page) {
+    Page.HOME, Page.ROLLCALL -> RefreshModule.ROLLCALL
+    Page.SCORES -> RefreshModule.SCORES
+    Page.COURSEWARE, Page.COURSE_LOCATION -> RefreshModule.COURSES
     // 课表不自动刷新：课表按学期基本不变，点击标签一律直接展示缓存，
     // 需要最新数据时由用户点课表页的「刷新」按钮手动拉取。
     else -> RefreshModule.NONE
@@ -84,7 +84,7 @@ class ForegroundModuleRefreshTracker {
     /**
      * 是否需要刷新。仅在模块缓存过期（超过 freshness 窗口）时才返回 true；
      * 切换标签不会无条件触发网络请求，避免浪费流量和等待。
-     * 手动刷新按钮直接调用 refreshXxx()，不走这里，天然是强制的。
+     *手动刷新按钮直接调用 refreshXxx，不走这里，天然是强制的。
      */
     fun shouldRefresh(
         module: RefreshModule,

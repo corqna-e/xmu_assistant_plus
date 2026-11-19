@@ -2,7 +2,6 @@ package com.xmu.assistant
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -24,12 +23,17 @@ internal fun rankDate(time: Long): String = SimpleDateFormat("yyyy-MM-dd HH:mm",
 
 @Composable
 internal fun RankEntry(label: String, onClick: () -> Unit) {
-    Surface(shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("专业排名", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Text(label, style = MaterialTheme.typography.labelMedium, color = themePrimary())
-            Spacer(Modifier.width(8.dp)); Text("›", color = themePrimary())
+    Surface(
+        shape = AppCardShape,
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = AppCardElevation,
+        tonalElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            PrivacyText("专业排名", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            PrivacyText(label, style = MaterialTheme.typography.labelMedium, color = themePrimary())
+            Spacer(Modifier.width(8.dp)); PrivacyText("›", color = themePrimary())
         }
     }
 }
@@ -45,32 +49,32 @@ internal fun RankPage(state: RankSectionState, onBack: () -> Unit) {
     val result = state.cache.result
     val pending = state.cache.pending
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        if (state.stale) Text("成绩已变化，以下为上次排名，待重新获取。", color = themeWarning(), style = MaterialTheme.typography.bodySmall)
+        if (state.stale) PrivacyText("成绩已变化，以下为上次排名，待重新获取。", color = themeWarning(), style = MaterialTheme.typography.bodySmall)
         PreviewCard {
-                Text("本次计算结果", color = themePrimary(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                PrivacyText("本次计算结果", color = themePrimary(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(result?.position?.toString() ?: "—", fontSize = 44.sp, fontWeight = FontWeight.Bold, color = themePrimary())
-                    Text(result?.participants?.let { "/ $it 人" } ?: "尚无排名结果", modifier = Modifier.padding(bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    PrivacyText(result?.position?.toString() ?: "—", fontSize = 44.sp, fontWeight = FontWeight.Bold, color = themePrimary())
+                    PrivacyText(result?.participants?.let { "/ $it 人" } ?: "尚无排名结果", modifier = Modifier.padding(bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (result != null) {
-                    Text(if (result.calculatedAt.isNotBlank()) "教务记录时间：${result.calculatedAt}" else "申请于 ${rankDate(result.requestedAt)}",
+                    PrivacyText(if (result.calculatedAt.isNotBlank()) "教务记录时间：${result.calculatedAt}" else "申请于 ${rankDate(result.requestedAt)}",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else Text("点击获取后，提交申请并读取本次计算结果。", style = MaterialTheme.typography.bodySmall)
+                } else PrivacyText("点击获取后，提交申请并读取本次计算结果。", style = MaterialTheme.typography.bodySmall)
                 if (state.ranges.size > 1 && pending == null) {
-                    Text("请选择教务提供的计算范围", fontWeight = FontWeight.Medium)
+                    PrivacyText("请选择教务提供的计算范围", fontWeight = FontWeight.Medium)
                     state.ranges.forEach { range ->
                         Row(Modifier.fillMaxWidth().clickable(enabled = !state.loading) { state.selectedRange = range.id }, verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = state.selectedRange == range.id, onClick = { state.selectedRange = range.id }, enabled = !state.loading)
-                            Text(range.name, style = MaterialTheme.typography.bodyMedium)
+                            PrivacyText(range.name, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
-                Text("请勿频繁申请。获取或重新获取会提交新的绩点计算申请，请按需操作；提交后请耐心等待。",
+                PrivacyText("请勿频繁申请。获取或重新获取会提交新的绩点计算申请，请按需操作；提交后请耐心等待。",
                     color = themeWarning(), style = MaterialTheme.typography.bodySmall)
                 if (state.loading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Button(onClick = state::fetch, enabled = !state.loading && (pending != null || state.ranges.size <= 1 || state.selectedRange.isNotBlank()),
                     shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text(when {
+                    PrivacyText(when {
                         state.loading -> state.stage
                         pending != null -> "继续查询结果"
                         // 多范围必须先选：按钮此时禁用，直接说明原因，避免“点了没反应”
@@ -80,39 +84,39 @@ internal fun RankPage(state: RankSectionState, onBack: () -> Unit) {
                     })
                 }
         }
-        if (state.error.isNotBlank()) Text(state.error, color = themeWarning(), style = MaterialTheme.typography.bodyMedium)
+        if (state.error.isNotBlank()) PrivacyText(state.error, color = themeWarning(), style = MaterialTheme.typography.bodyMedium)
         if (pending != null && !state.loading) {
-            Text("本次申请：${rankDate(pending.requestedAt)}\n继续查询只读取结果，不会新增申请。", style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { abandonDialog = true }) { Text("结束本次等待") }
+            PrivacyText("本次申请：${rankDate(pending.requestedAt)}\n继续查询只读取结果，不会新增申请。", style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { abandonDialog = true }) { PrivacyText("结束本次等待") }
         }
         if (result != null) {
             PreviewCard {
                 PreviewSectionHeader("计算范围", result.rangeName)
-                Text("绩点证明", fontWeight = FontWeight.Bold)
-                if (result.pdfBase64.isBlank()) Text("本地 PDF 已清理。排名与日期仍保留，已导出的副本不受影响。", style = MaterialTheme.typography.bodySmall)
+                PrivacyText("绩点证明", fontWeight = FontWeight.Bold)
+                if (result.pdfBase64.isBlank()) PrivacyText("本地 PDF 已清理。排名与日期仍保留，已导出的副本不受影响。", style = MaterialTheme.typography.bodySmall)
                 else {
-                    Text("与上方排名对应的原始 PDF", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    PrivacyText("与上方排名对应的原始 PDF", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = {
                             exportRecord = result.recordId
                             export.launch("绩点证明-${SimpleDateFormat("yyyyMMdd-HHmm", Locale.CHINA).format(Date(result.obtainedAt))}.pdf")
-                        }, modifier = Modifier.weight(1f), enabled = !state.loading) { Text("导出证明") }
-                        TextButton(onClick = { clearDialog = true }, enabled = !state.loading) { Text("清理 PDF") }
+                        }, modifier = Modifier.weight(1f), enabled = !state.loading) { PrivacyText("导出证明") }
+                        TextButton(onClick = { clearDialog = true }, enabled = !state.loading) { PrivacyText("清理 PDF") }
                     }
                 }
             }
         }
         PreviewCard(soft = true) {
-            Text("需要更新排名？", fontWeight = FontWeight.Bold)
-            Text("重新获取会提交新的绩点计算申请，请按需操作。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PrivacyText("更新排名", fontWeight = FontWeight.Bold)
+            PrivacyText("重新获取会提交新的绩点计算申请，请按需操作。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    if (clearDialog) AlertDialog(onDismissRequest = { clearDialog = false }, title = { Text("清理本地 PDF？") },
-        text = { Text("仅删除应用内保存的证明，保留排名和日期。已导出的文件不会删除；清理后无法再次导出这份本地证明。") },
-        confirmButton = { TextButton(onClick = { clearDialog = false; state.clearPdf() }) { Text("清理") } },
-        dismissButton = { TextButton(onClick = { clearDialog = false }) { Text("取消") } })
-    if (abandonDialog) AlertDialog(onDismissRequest = { abandonDialog = false }, title = { Text("结束等待？") },
-        text = { Text("这不会撤销教务端的申请。若申请已受理，再次获取会重复申请；建议先在教务系统核对。") },
-        confirmButton = { TextButton(onClick = { abandonDialog = false; state.abandonPending() }) { Text("结束等待") } },
-        dismissButton = { TextButton(onClick = { abandonDialog = false }) { Text("继续等待") } })
+    if (clearDialog) AlertDialog(onDismissRequest = { clearDialog = false }, title = { PrivacyText("清理本地 PDF") },
+        text = { PrivacyText("仅删除应用内保存的证明，保留排名和日期。已导出的文件不会删除；清理后无法再次导出这份本地证明。") },
+        confirmButton = { TextButton(onClick = { clearDialog = false; state.clearPdf() }) { PrivacyText("清理") } },
+        dismissButton = { TextButton(onClick = { clearDialog = false }) { PrivacyText("取消") } })
+    if (abandonDialog) AlertDialog(onDismissRequest = { abandonDialog = false }, title = { PrivacyText("结束等待") },
+        text = { PrivacyText("这不会撤销教务端的申请。若申请已受理，再次获取会重复申请；建议先在教务系统核对。") },
+        confirmButton = { TextButton(onClick = { abandonDialog = false; state.abandonPending() }) { PrivacyText("结束等待") } },
+        dismissButton = { TextButton(onClick = { abandonDialog = false }) { PrivacyText("继续等待") } })
 }

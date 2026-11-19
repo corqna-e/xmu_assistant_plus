@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--属性集合与「今日课程」组件逐条对齐 —— 那个组件能出现在系统列表里，
+     这个却一直不出现，最可能是元数据缺项或列表预览布局 inflate 失败。
+     现在 previewImage / previewLayout / initialLayout 三者齐全，且两个布局都用极简占位版，
+     不依赖运行时 addView 才能填充的列容器。 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:minWidth="250dp"
+    android:minHeight="170dp"
+    android:minResizeWidth="200dp"
+    android:minResizeHeight="110dp"
+    android:previewLayout="@layout/schedule_week_widget_initial"
+    android:previewImage="@drawable/schedule_week_widget_preview"
+    android:targetCellWidth="4"
+    android:targetCellHeight="3"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/schedule_week_widget_initial"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/schedule_week_widget_description"
+    tools:targetApi="s" />

@@ -29,21 +29,26 @@ data class XmuScoreSummary(
 )
 
 fun xmuScoreSummary(records: List<XmuScoreRecord>): XmuScoreSummary {
-    val percentRecords = records.filter { it.countsForStatistics && it.score != null && it.gradePoint != null }
-    val credits = percentRecords.sumOf { it.credit }
+    // 等级制课程按换算表补出绩点后也要计入 GPA，故 GPA 口径放宽到
+    // 「凡有绩点的计分课程」；均分/加权均分只对百分制成绩有意义，单独取有 score 的子集。
+    // 两个加权指标各用自己的学分分母，避免等级制学分污染百分制加权均分。
+    val gpaRecords = records.filter { it.countsForStatistics && it.gradePoint != null }
+    val scoreRecords = gpaRecords.filter { it.score != null }
+    val gpaCredits = gpaRecords.sumOf { it.credit }
+    val scoreCredits = scoreRecords.sumOf { it.credit }
     return XmuScoreSummary(
-        averageGpa = percentRecords.takeIf { it.isNotEmpty() }?.let { it.sumOf { record -> record.gradePoint ?: 0.0 }.div(it.size).roundScoreMetric() },
-        weightedGpa = if (credits > 0) percentRecords.sumOf { (it.gradePoint ?: 0.0) * it.credit }.div(credits).roundScoreMetric() else null,
-        averageScore = percentRecords.takeIf { it.isNotEmpty() }?.let { it.sumOf { record -> record.score ?: 0.0 }.div(it.size).roundScoreMetric() },
-        weightedScore = if (credits > 0) percentRecords.sumOf { (it.score ?: 0.0) * it.credit }.div(credits).roundScoreMetric() else null,
+        averageGpa = gpaRecords.takeIf { it.isNotEmpty() }?.let { it.sumOf { record -> record.gradePoint ?: 0.0 }.div(it.size).roundScoreMetric() },
+        weightedGpa = if (gpaCredits > 0) gpaRecords.sumOf { (it.gradePoint ?: 0.0) * it.credit }.div(gpaCredits).roundScoreMetric() else null,
+        averageScore = scoreRecords.takeIf { it.isNotEmpty() }?.let { it.sumOf { record -> record.score ?: 0.0 }.div(it.size).roundScoreMetric() },
+        weightedScore = if (scoreCredits > 0) scoreRecords.sumOf { (it.score ?: 0.0) * it.credit }.div(scoreCredits).roundScoreMetric() else null,
         completedCredits = records.filter { it.countsForCompletedCredit }.sumOf { it.credit }.roundScoreMetric(),
     )
 }
 
 /**
- * 虾大官方 4.0 分制：百分制成绩 → 绩点（来源：虾大本科课程学分绩点计算办法）。
- * 仅供「模拟成绩」输入换算的单一来源纯函数；已有成绩记录的 gradePoint 是平台
- * 直接返回的，不走此表。等级制课程（优/良/中/及格）第一版不支持模拟输入。
+ *官方 4.0 分制：百分制成绩 → 绩点。
+ * 仅供「模拟成绩」输入换算的单一来源纯函数；已有成绩记录的 gradePoint 优先取平台返回值。
+ *64-67 的 C- 由 1.5 修正为表中给出的 1.7。
  */
 fun xmuSimulatedGradePoint(score: Double): Double = when {
     score >= 95.0 -> 4.0 // 95-100 A+
@@ -54,9 +59,25 @@ fun xmuSimulatedGradePoint(score: Double): Double = when {
     score >= 75.0 -> 2.7 // 75-77 B-
     score >= 72.0 -> 2.3 // 72-74 C+
     score >= 68.0 -> 2.0 // 68-71 C
-    score >= 64.0 -> 1.5 // 64-67 C-
+    score >= 64.0 -> 1.7 // 64-67 C-
     score >= 60.0 -> 1.0 // 60-63 D
     else -> 0.0 // <60 F
+}
+
+/** 等级制字母等级 → 绩点（同一张换算表的「等级制 / 绩点」两列）。
+ *只认表里出现的 A+~F；五级制中文等级、P/NP、W/I/EX/S/U 等标记不参与 GPA。 */
+fun gradePointForLetterGrade(text: String): Double? = when (text.trim().uppercase()) {
+    "A+", "A" -> 4.0
+    "A-" -> 3.7
+    "B+" -> 3.3
+    "B" -> 3.0
+    "B-" -> 2.7
+    "C+" -> 2.3
+    "C" -> 2.0
+    "C-" -> 1.7
+    "D" -> 1.0
+    "F" -> 0.0
+    else -> null
 }
 
 /**

@@ -1,11 +1,33 @@
 <resources>
-    <color name="xmu_launcher_background">#083B6F</color>
+    <color name="xmu_launcher_background">#023E7D</color>
 
-    <!-- 桌面小卡片配色（体检报告 §6-UX②）：布局/背景一律引用资源，
+    <!-- 桌面小卡片配色：布局/背景一律引用资源，
          夜间变体见 values-night/colors.xml -->
     <color name="widget_background">#FFFFFF</color>
-    <color name="widget_stroke">#DDE6EE</color>
-    <color name="widget_accent">#0B4F8A</color>
-    <color name="widget_primary_text">#18324F</color>
-    <color name="widget_secondary_text">#55708A</color>
+    <!--对齐 App 新色板，主色调到中等明度学院蓝 #3369B0 -->
+    <color name="widget_stroke">#E4EBF4</color>
+    <color name="widget_accent">#3369B0</color>
+    <color name="widget_primary_text">#16283F</color>
+    <color name="widget_secondary_text">#5E7189</color>
+    <!--明日课程行比次级文字再淡一档（alpha 0xB3），其它位置不受影响。 -->
+    <color name="widget_tomorrow_text">#B35E7189</color>
+
+    <!--小组件专用固定色板。刻意放在 values/ 而不是 values-night/，
+         RemoteViews 由桌面进程 inflate，App 的 Compose 主题与系统 uiMode 都管不到它，
+         必须由 Provider 按 AssistantSettings.themeMode 显式把颜色写进每个控件。 -->
+    <color name="widget_light_background">#FFFFFF</color>
+    <color name="widget_light_stroke">#E4EBF4</color>
+    <color name="widget_light_accent">#3369B0</color>
+    <color name="widget_light_primary">#16283F</color>
+    <color name="widget_light_secondary">#5E7189</color>
+    <color name="widget_light_tomorrow">#B35E7189</color>
+    <color name="widget_light_on_chip">#FFFFFF</color>
+    <color name="widget_dark_background">#16212E</color>
+    <color name="widget_dark_stroke">#2A3A4E</color>
+    <color name="widget_dark_accent">#9CBEE8</color>
+    <color name="widget_dark_primary">#EDF3FB</color>
+    <color name="widget_dark_secondary">#A7B8CC</color>
+    <color name="widget_dark_tomorrow">#B3A7B8CC</color>
+    <!--深色模式下 chip 底是浅蓝，必须用深字，否则白字在浅底上几乎看不见。 -->
+    <color name="widget_dark_on_chip">#16283F</color>
 </resources>

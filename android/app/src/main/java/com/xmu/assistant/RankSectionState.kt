@@ -91,7 +91,7 @@ internal class RankSectionState(
                 val saved = withContext(Dispatchers.IO) { writeCache(json, active) }
                 check(saved) { "无法保存申请状态，已停止操作" }
                 ensureActive()
-                check(active()) { "会话已改变" }
+                check(active()) { ErrorCodes.SESSION_CHANGED }
                 working = value; cache = value
             }
             suspend fun finishWith(record: RankRecord, pending: RankPending, reuseNote: String?) {
@@ -123,7 +123,7 @@ internal class RankSectionState(
             try {
                 if (working.pending == null) {
                     val choices = withContext(Dispatchers.IO) { client.ranges() }
-                    check(active()) { "会话已改变" }
+                    check(active()) { ErrorCodes.SESSION_CHANGED }
                     val choice = choices.singleOrNull() ?: choices.singleOrNull { it.id == rangeId }
                     if (choice == null) {
                         ranges = choices
@@ -131,7 +131,7 @@ internal class RankSectionState(
                         return@launch
                     }
                     val snapshot = withContext(Dispatchers.IO) { client.records() }
-                    check(active()) { "会话已改变" }
+                    check(active()) { ErrorCodes.SESSION_CHANGED }
                     // 先探测：所选范围已有完整记录就直接复用并说明原因，绝不重复提交
                     // （教务对已存在的记录会忽略新申请，先申请再等只会白等）
                     val existing = latestCompleteRecordForRange(snapshot, choice.id)
@@ -158,11 +158,11 @@ internal class RankSectionState(
                 var ambiguity: String? = null
                 var attempt = 0
                 while (true) {
-                    ensureActive(); check(active()) { "会话已改变" }
+                    ensureActive(); check(active()) { ErrorCodes.SESSION_CHANGED }
                     val pending = working.pending ?: error("申请状态缺失")
                     val records = withContext(Dispatchers.IO) { client.records() }
                     // 最后一次查询也可能跨过换号/清空；在解释结果或显示等待提示前重新验世代。
-                    ensureActive(); check(active()) { "会话已改变" }
+                    ensureActive(); check(active()) { ErrorCodes.SESSION_CHANGED }
                     // 多笔新申请并存时无法归因本次申请，但不妨碍兜底采用本范围最近记录
                     val record = try { identifyRankRecord(records, pending) }
                     catch (e: IllegalStateException) { ambiguity = e.message; null }

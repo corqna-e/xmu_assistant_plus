@@ -27,6 +27,10 @@ data class XmuScheduleGroup(
     val teachers: List<String>,
     val weeks: String,
     val variants: List<XmuScheduleVariant> = emptyList(),
+    /** 该条目是考试而不是课程（考试由 ExamScheduleMerge 并入课表）。 */
+    val isExam: Boolean = false,
+    /**该条目被本地「调课」改过（星期/节次来自本地调整），显示时加「[调]」前缀。 */
+    val isAdjusted: Boolean = false,
 )
 
 data class XmuScheduleVariant(
@@ -161,4 +165,49 @@ fun formatXmuTime(value: Int): String {
     val minute = value % 100
     if (hour !in 0..23 || minute !in 0..59) return ""
     return "%02d:%02d".format(hour, minute)
+}
+
+/**
+ * 自动监控时段自查：当前时间是否在今天任一课程的 [开始-30 分钟, 结束+30 分钟] 窗口内。
+ *
+ *v18 修正：
+ * - 旧实现把「今天没有课」当作放行（返回 true），于是周末、没课的日子全天都在轮询；
+ * - 判定用的课表数据取自 `scheduleCacheJson`（旧版加密 prefs），而课表现在存在文件缓存里，
+ *那个字段恒为空 → 直接短路放行，开关等于没有。
+ * 现在：只有"完全没有课表数据"才放行（否则监控会彻底停摆），其余严格按当天课程判断；
+ * 当天没课一律待机。周次不参与判定：假期多开的窗只会多待机检查，不会漏检。
+ */
+internal fun autoMonitorWindowActive(
+    snapshot: XmuScheduleSnapshot,
+    weekday: Int,
+    nowMinuteOfDay: Int,
+): Boolean {
+    if (snapshot.entries.isEmpty()) return true
+    val today = snapshot.entries.filter { it.weekday == weekday }
+    // 今天没课：这一整天都不需要检查签到。
+    if (today.isEmpty()) return false
+    return today.any { entry ->
+        val start = xmuMinuteOfDay(entry.startTime)
+        val end = xmuMinuteOfDay(entry.endTime)
+        // 时间字段异常时无法判断，宁可多查不漏查。
+        if (start == null || end == null || end < start) return@any true
+        nowMinuteOfDay in (start - 30)..(end + 30)
+    }
+}
+
+/** 兼容旧调用/测试的 JSON 入口：解析失败或空串视为「无课表数据」，放行。 */
+internal fun autoMonitorWindowActive(scheduleJson: String, weekday: Int, nowMinuteOfDay: Int): Boolean {
+    if (scheduleJson.isBlank()) return true
+    val snapshot = runCatching { xmuScheduleSnapshotFromJson(scheduleJson) }.getOrElse { error ->
+        Diagnostics.record("课表", error, "监控窗口判断读课表缓存")
+        null
+    } ?: return true
+    return autoMonitorWindowActive(snapshot, weekday, nowMinuteOfDay)
+}
+
+private fun xmuMinuteOfDay(hhmm: Int): Int? {
+    val hour = hhmm / 100
+    val minute = hhmm % 100
+    if (hour !in 0..23 || minute !in 0..59) return null
+    return hour * 60 + minute
 }

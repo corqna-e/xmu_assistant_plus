@@ -43,11 +43,11 @@ internal class ExamNetworkException(cause: Throwable) :
 internal class ExamResponseException(message: String = "考试安排接口返回格式异常", cause: Throwable? = null) :
     IllegalStateException(message, cause)
 
-/** 登录/恢复在途时考试请求被拒（风控红线：不并发打两个身份域），提示稍候重试而非引导重登。 */
+/**登录/恢复在途时考试请求被拒，提示稍候重试而非引导重登。 */
 internal class ExamLoginInProgressException : IllegalStateException("登录处理中，请稍候")
 
 /** 探测结果：有效学期列表（新→旧，最近在前）+ 最近有效学期数据（probe 已拉取，供上层复用，省一次请求）
- *  + 窗口内全部有效学期数据（供上层整体缓存，切学期/跨学期提醒聚合复用）。 */
+ *+ 窗口内全部有效学期数据（供上层整体缓存，切学期/跨学期提醒聚合复用）。 */
 internal data class ExamProbeResult(
     val terms: List<String>,
     val latest: XmuTermExamSummary?,
@@ -101,7 +101,7 @@ internal class XmuExamClient(
     /**
      * 拉取某学期考试安排（已排 + 未安排）。
      * 只读查询；会话过期时内部自动安全续登（进程级单飞门，与课表/成绩同构），
-     * 网络/格式异常分类明确不触发重登（风控红线）。
+     *网络/格式异常分类明确不触发重登。
      */
     fun fetchTermExams(termCode: String): XmuTermExamSummary? {
         // 参照成绩 fetchScores 的「并行首拉 + 统一续登一次 + 全部重试」模式：
@@ -189,9 +189,9 @@ internal class XmuExamClient(
     /**
      * 探测有效学期（返回新→旧，最近在前）：
      * - 主路径：教务学期列表（xnxqcx.do）取最近学期为窗口上界；
-     *   学号可解析时窗口下界 = 入学年份第一学期（不探测未入学学期，省请求）
+     *学号可解析时窗口下界 = 入学年份第一学期（不探测未入学学期，省请求）
      * - 列表拉取失败若是会话过期：与 fetchTermExams 同构，续登一次后重试
-     *   （否则回退到本地推断窗口，会漏掉列表才有的未来学期）
+     *（否则回退到本地推断窗口，会漏掉列表才有的未来学期）
      * - 回退路径（列表/学号不可用）：本地时间推断 + 连续空白停止
      * 有效判据 = 已排考试或已选课未安排任一非空（底线：读到已选课未安排即显示）。
      */
@@ -215,7 +215,7 @@ internal class XmuExamClient(
             academicTerms = emptyList()
         }
         if (academicTerms.isEmpty() && listError is ExamNetworkException) {
-            // 网络抖动（非会话过期）：同 cookie 有限重试一次（不触发 CAS 登录，风控红线），
+            // 网络抖动（非会话过期）：同 cookie 有限重试一次，
             // 避免新学期数据因单次网络抖动滞后 6h（shouldReProbe 节流内不再重探）
             academicTerms = runCatching { fetchTermCodes() }.getOrDefault(emptyList())
         }
@@ -255,7 +255,7 @@ internal class XmuExamClient(
      * 命中（已排或未安排非空）记入；返回新→旧 + 最近有效学期数据。
      * 收敛（省请求）：
      * - 下界 = 最近已知有效学期往前 2 个（更早的学期列表稳定，保持缓存不重复探测；
-     *   首次探测（knownTerms 空）仍覆盖完整窗口）
+     *首次探测（knownTerms 空）仍覆盖完整窗口）
      * - 已知有效学期（knownTerms，已在缓存）跳过探测，只探新增/边界学期
      * 会话过期处理（参照 fetchScores firstWave→login→retry 模式）：
      * 首轮并行拉取 → 任一学期判会话过期 → **统一续登一次** → 仅重试失败学期。
@@ -272,7 +272,7 @@ internal class XmuExamClient(
         val fullWindow = termsBetween(enrollmentYear, recent) // 新→旧
         // 学号解析出的入学年份晚于教务可用学期时窗口为空（学号格式漂移 / 教务列表滞后）：
         // 空窗口没有可锚定的下界，直接回落串行 blank-stop 探测，
-        // 避免 fullWindow.last() 抛 NoSuchElementException 让考试页整体取不到数据。
+        //避免 fullWindow.last 抛 NoSuchElementException 让考试页整体取不到数据。
         if (fullWindow.isEmpty()) return probeWithBlankStop(recent, maxProbe, blankLimit)
         // 收敛下界：最近已知有效学期往前 2 个学期；更早学期不重探（数据在缓存，列表稳定）
         val newestKnown = knownTerms.firstOrNull()
@@ -471,9 +471,12 @@ internal class XmuExamClient(
         JwSessionMarkers.isAuthFailure(code, this)
 
     /** 解析根对象（三条解析路径共用）：坏 JSON 统一抛 ExamResponseException（B2 收敛）。
-     *  BOM 剥离对齐 XmuScoreAutoQueryClient 先例（该源真实出现过带 BOM 响应）。 */
+     *BOM 剥离对齐 XmuScoreAutoQueryClient 先例（该源真实出现过带 BOM 响应）。 */
     private fun parseRoot(body: String): JSONObject =
-        runCatching { JSONObject(body.removePrefix("\uFEFF")) }.getOrElse { throw ExamResponseException(cause = it) }
+        runCatching { JSONObject(body.removePrefix("\uFEFF")) }.getOrElse { error ->
+            Diagnostics.record("考试", error, "考试接口 JSON 解析（${body.length} 字符）")
+            throw ExamResponseException(cause = error)
+        }
 
     /** datas.&lt;block&gt;.rows 行骨架（原三处逐字重复的取行链，缺段回落空数组）。 */
     private fun rowsOf(root: JSONObject, block: String): JSONArray =
@@ -484,7 +487,7 @@ internal class XmuExamClient(
         val rows = rowsOf(root, "cxxsksap")
         return (0 until rows.length()).mapNotNull { index ->
             val row = rows.optJSONObject(index) ?: return@mapNotNull null
-            // optRealString：显式 null 的 KSRWID 会被读成 "null"，多场考试共享该去重键（体检 P1-5）
+            // optRealString：显式 null 的 KSRWID 会被读成 "null"，多场考试共享该去重键
             val id = row.optRealString("KSRWID").ifBlank { row.optRealString("KSDM") }
             if (id.isBlank()) return@mapNotNull null
             val date = row.optRealString("KSRQ")
@@ -557,7 +560,7 @@ internal class XmuExamClient(
 }
 
 /** 从学号提取入学年份（虾大本科学号：3 位学院码 + 4 位年份 + 7 位序号）。
- *  普适：格式不匹配时返回 null（上层回退到探测窗口）。 */
+ *普适：格式不匹配时返回 null（上层回退到探测窗口）。 */
 internal fun enrollmentYearFromStudentId(studentId: String): Int? {
     val match = STUDENT_ID_YEAR_PATTERN.find(studentId) ?: return null
     return match.groupValues[1].toInt()

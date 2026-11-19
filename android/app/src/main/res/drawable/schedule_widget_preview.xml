@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Compact time / course / classroom columns, matching the default desktop layout. -->
+<!--Compact time / course / classroom columns, matching the default desktop layout. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="200dp" android:height="88dp" android:viewportWidth="350" android:viewportHeight="154">
     <path android:fillColor="#FFFFFF" android:strokeColor="#D8E3EE" android:strokeWidth="1"

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 周课表小组件：一个空节次格。height=0dp + weight=1 让 11 个格子等分整天，
+     与左侧时间列等分同一份高度，因此无需知道卡片实际尺寸也能严丝合缝对齐。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:background="@drawable/week_grid_line"
+    android:orientation="vertical" />

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 周课表小组件：跨 10 个节次的课程块。layout_weight=10 —— 高度由权重分配，
+     不是测量出来的，所以任何尺寸的卡片都能自然铺满且不缩放。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/week_block_root"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="10"
+    android:background="@drawable/week_block_fill_0"
+    android:orientation="horizontal">
+
+    <LinearLayout
+        android:id="@+id/week_block_bar"
+        android:layout_width="2dp"
+        android:layout_height="match_parent"
+        android:layout_marginLeft="1.5dp"
+        android:layout_marginTop="1dp"
+        android:layout_marginBottom="1dp"
+        android:background="@drawable/week_block_bar_0"
+        android:orientation="vertical" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:paddingLeft="3dp"
+        android:paddingRight="2dp">
+
+        <TextView
+            android:id="@+id/week_block_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="3"
+            android:textColor="@color/widget_primary_text"
+            android:textSize="10dp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/week_block_loc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="8"
+            android:textColor="@color/widget_secondary_text"
+            android:textSize="7.5dp" />
+    </LinearLayout>
+</LinearLayout>

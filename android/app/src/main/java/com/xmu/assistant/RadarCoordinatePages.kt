@@ -7,7 +7,6 @@ import android.location.Location
 import android.location.LocationManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -24,7 +23,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -33,7 +31,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -139,7 +136,11 @@ internal fun CourseCoordinatePage(
         store.placesFor(selectedCourseId, selectedCourseTitle)
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
         if (availableCourses.size > 1) {
             item {
                 Row(
@@ -154,7 +155,7 @@ internal fun CourseCoordinatePage(
                                 selectedCourseTitle = course.title
                                 onCourseSelected(course)
                             },
-                            label = { Text(course.title, maxLines = 1) },
+                            label = { PrivacyText(course.title, maxLines = 1) },
                         )
                     }
                 }
@@ -165,16 +166,16 @@ internal fun CourseCoordinatePage(
                 PreviewListRow(
                     icon = R.drawable.ic_nav_location,
                     title = "自动签到会使用首选地点",
-                    subtitle = "这门课可保存任意多个地点，你决定保留多少个。",
+                    subtitle = "该课程可保存任意数量的地点，保留数量由用户决定。",
                     trailing = {},
                 )
             }
         }
         item { PreviewSectionHeader("已保存地点", "${places.size} 个") }
         if (selectedCourse == null) {
-            item { EmptyState("本学期暂无课程", "刷新课表和课程后，就可以为本学期课程保存常用地点。") }
+            item { EmptyState("本学期暂无课程", "刷新课表与课程后，即可为本学期课程保存常用地点。") }
         } else if (places.isEmpty()) {
-            item { EmptyState("还没有地点", "可从翔安校区地点中选择，也可以在教室现场采点。") }
+            item { EmptyState("暂无地点", "可从翔安校区地点中选择，也可以在教室现场采点。") }
         } else {
             item {
                 PreviewCard {
@@ -198,14 +199,14 @@ internal fun CourseCoordinatePage(
             }
         }
         if (selectedCourse != null) {
-            item { Button(onClick = onAddPlace, modifier = Modifier.fillMaxWidth().height(46.dp)) { Text("添加地点") } }
-            item { OutlinedButton(onClick = onCapture, modifier = Modifier.fillMaxWidth().height(46.dp)) { Text("现场采点") } }
+            item { Button(onClick = onAddPlace, modifier = Modifier.fillMaxWidth().height(46.dp)) { PrivacyText("添加地点") } }
+            item { OutlinedButton(onClick = onCapture, modifier = Modifier.fillMaxWidth().height(46.dp)) { PrivacyText("现场采点") } }
         }
         item {
             PreviewCard(soft = true) {
-                Text("偶尔换教室时", fontWeight = FontWeight.Bold)
-                Text(
-                    "先在这里切换首选地点；自动签到不会临时弹窗打断你。",
+                PrivacyText("教室临时变更时", fontWeight = FontWeight.Bold)
+                PrivacyText(
+                    "请在此切换首选地点；自动签到过程中不会弹出临时提示。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -224,14 +225,14 @@ private fun SavedRadarPlaceRow(place: RadarCoordinate, showDivider: Boolean, onP
         ) {
             RadioButton(selected = place.preferred, onClick = onPreferred)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(place.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
+                PrivacyText(place.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                PrivacyText(
                     String.format(Locale.US, "%.6f, %.6f · %s", place.latitude, place.longitude, RADAR_COORDINATE_SYSTEM),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (place.preferred) PreviewBadge("首选", PreviewBadgeTone.GREEN) else TextButton(onClick = onDelete) { Text("删除") }
+            if (place.preferred) PreviewBadge("首选", PreviewBadgeTone.GREEN) else TextButton(onClick = onDelete) { PrivacyText("删除") }
         }
         if (showDivider) Spacer(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
     }
@@ -252,26 +253,58 @@ internal fun AddRadarPlacePage(
     val selectedCourse = selectedCourse(availableCourses, initialCourse)
     var zone by rememberSaveable { mutableStateOf(radarZones.first()) }
     var selectedPresetId by rememberSaveable { mutableStateOf("") }
+    // 预存地点默认折叠——常来的地点用户自己记坐标，列表太占屏。
+    var presetsExpanded by rememberSaveable { mutableStateOf(false) }
     var customMode by rememberSaveable { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
     var latitude by rememberSaveable { mutableStateOf("") }
     var longitude by rememberSaveable { mutableStateOf("") }
+    // 地图选点对话框开关（选完自动切到自定义模式并回填经纬度）。
+    var mapPickerOpen by rememberSaveable { mutableStateOf(false) }
     val preset = presets.firstOrNull { it.id == selectedPresetId }
     val lat = if (customMode) latitude.toDoubleOrNull() else preset?.latitude
     val lon = if (customMode) longitude.toDoubleOrNull() else preset?.longitude
     val placeName = if (customMode) name.trim() else preset?.name.orEmpty()
     val valid = selectedCourse != null && placeName.isNotBlank() && lat != null && lat in -90.0..90.0 && lon != null && lon in -180.0..180.0
 
-    LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
         item {
             PreviewCard {
-                PreviewSectionHeader("从预存地点选择", "翔安校区")
+                // 默认折叠，点标题行展开/收起；收起时带一行当前选中结果，不用展开也知道选了谁。
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { presetsExpanded = !presetsExpanded }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        PreviewSectionHeader("从预存地点选择", "翔安校区")
+                    }
+                    PrivacyText(
+                        if (presetsExpanded) "▾" else "›",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (!presetsExpanded) {
+                    PrivacyText(
+                        if (!customMode && preset != null) "已选：${preset.name}" else "点击展开，从预存地点中选择。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (presetsExpanded) {
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     radarZones.forEach { item ->
-                        FilterChip(selected = zone == item, onClick = { zone = item }, label = { Text(item) })
+                        FilterChip(selected = zone == item, onClick = { zone = item }, label = { PrivacyText(item) })
                     }
                 }
                 val zonePresets = presets.filter { it.zone == zone }
@@ -285,8 +318,8 @@ internal fun AddRadarPlacePage(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(item.name, fontWeight = FontWeight.Bold)
-                                Text(
+                                PrivacyText(item.name, fontWeight = FontWeight.Bold)
+                                PrivacyText(
                                     String.format(Locale.US, "%.6f, %.6f · %s", item.latitude, item.longitude, RADAR_COORDINATE_SYSTEM),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -300,6 +333,7 @@ internal fun AddRadarPlacePage(
                         if (index < zonePresets.lastIndex) Spacer(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
                     }
                 }
+                }
             }
         }
         item {
@@ -308,20 +342,42 @@ internal fun AddRadarPlacePage(
                     icon = R.drawable.ic_nav_settings,
                     title = "自定义坐标",
                     subtitle = "直接填写地点名称、纬度和经度",
-                    trailing = { Text("›", style = MaterialTheme.typography.headlineSmall) },
+                    trailing = { PrivacyText("›", style = MaterialTheme.typography.headlineSmall) },
                 )
                 if (customMode) {
-                    OutlinedTextField(name, { name = it }, label = { Text("地点名称") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(name, { name = it }, label = { PrivacyText("地点名称") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(latitude, { latitude = it }, label = { Text("纬度") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                        OutlinedTextField(longitude, { longitude = it }, label = { Text("经度") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                        OutlinedTextField(latitude, { latitude = it }, label = { PrivacyText("纬度") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                        OutlinedTextField(longitude, { longitude = it }, label = { PrivacyText("经度") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
                     }
                 }
             }
         }
         item {
+            // 地图选点。只渲染底图并取中心坐标，不调用搜索/逆地理编码等计次接口。
+            // 公开栅格瓦片不需要任何 Key，「未配置 Key」的分支与填写框一并删除。
+            PreviewCard(
+                onClick = {
+                    // 限额只在后台生效，界面不展示剩余次数/上限；
+                    // 超限时给一句中性提示，不暴露额度信息。
+                    if (!MapUsageGuard.tryConsume(context)) {
+                        show("地图服务暂时不可用，请稍后再试")
+                    } else {
+                        mapPickerOpen = true
+                    }
+                },
+            ) {
+                PreviewListRow(
+                    icon = R.drawable.ic_nav_location,
+                    title = "在地图上选点",
+                    subtitle = "拖动地图对准地点，自动填入经纬度",
+                    trailing = { PrivacyText("›", style = MaterialTheme.typography.headlineSmall) },
+                )
+            }
+        }
+        item {
             PreviewCard(onClick = onCapture) {
-                PreviewListRow(R.drawable.ic_nav_location, "到现场获取坐标", "现在就定位并保存，不需要等到签到时")
+                PreviewListRow(R.drawable.ic_nav_location, "到现场获取坐标", "立即定位并保存，无需等到签到时。")
             }
         }
         item {
@@ -342,8 +398,24 @@ internal fun AddRadarPlacePage(
                 },
                 enabled = valid,
                 modifier = Modifier.fillMaxWidth().height(46.dp),
-            ) { Text("保存") }
+            ) { PrivacyText("保存") }
         }
+    }
+
+    if (mapPickerOpen) {
+        MapPickerDialog(
+            initialLatitude = latitude.toDoubleOrNull(),
+            initialLongitude = longitude.toDoubleOrNull(),
+            onPicked = { pickedLat, pickedLng ->
+                customMode = true
+                selectedPresetId = ""
+                latitude = String.format(Locale.US, "%.6f", pickedLat)
+                longitude = String.format(Locale.US, "%.6f", pickedLng)
+                mapPickerOpen = false
+                show("已填入地图坐标，可继续补充地点名称")
+            },
+            onDismiss = { mapPickerOpen = false },
+        )
     }
 }
 
@@ -465,13 +537,16 @@ internal fun OnsiteRadarCapturePage(
         }
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
         item {
             Surface(
                 modifier = Modifier.fillMaxWidth().height(180.dp),
-                shape = RoundedCornerShape(14.dp),
+                shape = AppCardShape,
                 color = themePrimarySoft(),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Box(Modifier.size(68.dp).background(themePrimary().copy(alpha = .14f), CircleShape))
@@ -486,7 +561,7 @@ internal fun OnsiteRadarCapturePage(
             PreviewCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(
+                        PrivacyText(
                             when {
                                 captured != null && locating -> "已获取位置，正在提高精度"
                                 captured != null -> "当前位置已获取"
@@ -495,7 +570,7 @@ internal fun OnsiteRadarCapturePage(
                             },
                             fontWeight = FontWeight.Bold,
                         )
-                        Text("$RADAR_COORDINATE_SYSTEM · $captureStatus", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        PrivacyText("$RADAR_COORDINATE_SYSTEM · $captureStatus", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     PreviewBadge(
                         when {
@@ -514,10 +589,10 @@ internal fun OnsiteRadarCapturePage(
         }
         item {
             PreviewCard {
-                OutlinedTextField(placeName, { placeName = it }, label = { Text("地点名称") }, placeholder = { Text("例如 坤銮楼 B207") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(selectedCourse?.title.orEmpty(), {}, label = { Text("保存到课程") }, readOnly = true, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(placeName, { placeName = it }, label = { PrivacyText("地点名称") }, placeholder = { PrivacyText("例如 坤銮楼 B207") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(selectedCourse?.title.orEmpty(), {}, label = { PrivacyText("保存到课程") }, readOnly = true, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = ::requestCapture, enabled = !locating, modifier = Modifier.weight(1f).height(45.dp)) { Text(if (locating) "采样中" else "重新采样") }
+                    OutlinedButton(onClick = ::requestCapture, enabled = !locating, modifier = Modifier.weight(1f).height(45.dp)) { PrivacyText(if (locating) "采样中" else "重新采样") }
                     Button(
                         onClick = {
                             val point = captured ?: return@Button
@@ -528,13 +603,13 @@ internal fun OnsiteRadarCapturePage(
                         },
                         enabled = captured != null && selectedCourse != null && placeName.isNotBlank(),
                         modifier = Modifier.weight(1f).height(45.dp),
-                    ) { Text("保存") }
+                    ) { PrivacyText("保存") }
                 }
             }
         }
         item {
             PreviewCard(soft = true) {
-                PreviewListRow(R.drawable.ic_nav_help, "建议站在常用教室内采点", "等精度稳定后再保存，减少楼间漂移。", trailing = {})
+                PreviewListRow(R.drawable.ic_nav_help, "建议在常用教室内采点", "待精度稳定后再保存，减少楼间漂移。", trailing = {})
             }
         }
     }

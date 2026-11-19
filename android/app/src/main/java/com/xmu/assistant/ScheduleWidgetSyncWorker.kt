@@ -43,11 +43,11 @@ internal fun scheduleWidgetSyncSessionAllowed(
  *
  * 每天定时（默认早上 7:00）在后台拉一次课表，写入缓存并同步桌面小卡片，
  * 让用户不打开 App 也能看到当天最新课程。安全策略：
- * - App 前台活跃时跳过本次（用户自己刷新会同步小卡片，避免双登录/双请求）；
+ *- App 前台活跃时跳过本次；
  * - 未登录或小卡片开关关闭时跳过，不发任何网络请求；
  * - 必须联网才执行；
  * - 复用与手动刷新完全相同的取课表逻辑（fetchScheduleWithNetworkRetry），
- *   失败由 WorkManager 指数退避重试。
+ *失败由 WorkManager 指数退避重试。
  */
 internal class ScheduleWidgetSyncRun(
     private val context: Context,
@@ -76,14 +76,14 @@ internal class ScheduleWidgetSyncRun(
         val fetchedMainCookie = settings.cookieHeader
         val fetchedScoreCookie = settings.scoreCookieHeader
         if (fetchedUsername.isBlank() || fetchedPassword.isBlank()) return Result.success()
-        if (!settings.widgetEnabled) return Result.success()
+        // 总开关已删除，后台同步不再受 widgetEnabled 影响（历史残留 false 不生效）。
         // 登录态复核（三态镜像，见 readWidgetLoggedInMirror）：登出后凭据按设计
         // 残留，缺此复核会以残留凭据发起教务 CAS 登录——登录请求已打出（登出后
         // 幽灵登录 = 风控暴露；同款守卫见 ScoreSectionState.refresh）
         fun sessionAllowsSync(): Boolean =
             sessionEpoch.isGenerationCurrent(generation) &&
                 settings.username == fetchedUsername && settings.password == fetchedPassword &&
-                settings.cookieHeader == fetchedMainCookie && settings.widgetEnabled &&
+                settings.cookieHeader == fetchedMainCookie &&
                 scheduleWidgetSyncSessionAllowed(
                     loggedInMirror = AssistantSettings.readWidgetLoggedInMirror(context),
                     autoLoginPolicy = settings.autoLoginPolicy,
@@ -141,7 +141,7 @@ internal class ScheduleWidgetSyncRun(
             // Worker 被取消（重新入队/约束失效）必须优雅终止，不能转成 retry 与取消语义对抗
             throw error
         } catch (error: AcademicLoginBlockedException) {
-            // 登录被服务端拒绝/限流是永久性失败：指数退避重试只会反复打 CAS 登录（风控红线）
+            // 登录被服务端拒绝/限流是永久性失败：指数退避重试只会反复打 CAS 登录
             Result.failure()
         } catch (error: Throwable) {
             Result.retry()

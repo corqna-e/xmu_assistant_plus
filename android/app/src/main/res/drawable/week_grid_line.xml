@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--周课表小组件：一个节次格子的底边分隔线。只保留底边，避免出现竖向格线。alpha 0x33 → 0x1A，横线更淡。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:gravity="bottom" android:height="1dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#1AA8B4C4" />
+        </shape>
+    </item>
+</layer-list>

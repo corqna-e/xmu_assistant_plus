@@ -23,7 +23,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,8 +44,8 @@ import androidx.compose.ui.unit.dp
  * - 进入页面不自动拉数据：先读缓存 + 悄悄检查变化（列表增删 / 未完成→已完成）
  * - 有变化才自动刷新，并显示底部横幅「检测到变化，自动更新」；无变化静默
  * - 手动刷新按钮始终可用；支持下拉手势触发同一刷新链路（PullToRefreshBox，
- *   material3 1.3.0 为 Experimental API，页面为本页顶层 LazyColumn 的非嵌套
- *   标准用法，规避 issuetracker 356039090 的嵌套布局指示器残留问题）
+ *material3 1.3.0 为 Experimental API，页面为本页顶层 LazyColumn 的非嵌套
+ *标准用法，规避 issuetracker 356039090 的嵌套布局指示器残留问题）
  * - 无缓存首次加载显示骨架占位（简单灰块 + 呼吸透明度，不引 shimmer 依赖）
  * - 学期切换器只列「有效学期」（探测到有数据），默认最近有效学期
  */
@@ -100,6 +99,7 @@ fun ExamPage(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
         item {
@@ -116,9 +116,9 @@ fun ExamPage(
                         validTerms.forEach { term ->
                             val active = term == selectedTerm
                             if (active) {
-                                Button(onClick = { onSelectTerm(term) }) { Text(termLabelShort(term)) }
+                                Button(onClick = { onSelectTerm(term) }) { PrivacyText(termLabelShort(term)) }
                             } else {
-                                OutlinedButton(onClick = { onSelectTerm(term) }) { Text(termLabelShort(term)) }
+                                OutlinedButton(onClick = { onSelectTerm(term) }) { PrivacyText(termLabelShort(term)) }
                             }
                         }
                     }
@@ -132,11 +132,11 @@ fun ExamPage(
                         onClick = onRefresh,
                         enabled = !loading,
                         modifier = Modifier.weight(1f),
-                    ) { Text(if (loading) stringResource(R.string.exam_page_refreshing) else stringResource(R.string.exam_page_refresh)) }
+                    ) { PrivacyText(if (loading) stringResource(R.string.exam_page_refreshing) else stringResource(R.string.exam_page_refresh)) }
                 }
-                RefreshStateBanner(loading = loading, errorMessage = refreshError, hasData = summary != null)
+                RefreshStateBanner(loading = loading, errorMessage = refreshError, hasData = summary != null, onRetry = onRefresh)
                 if (autoUpdated) {
-                    Text(
+                    PrivacyText(
                         stringResource(R.string.exam_page_auto_updated),
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
@@ -169,7 +169,7 @@ fun ExamPage(
         // 未完成（未到考试时间）
         if (upcoming.isNotEmpty()) {
             item {
-                Text(
+                PrivacyText(
                     stringResource(R.string.exam_page_upcoming, upcoming.size),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -184,7 +184,7 @@ fun ExamPage(
         // 已完成（考试时间已过）
         if (finished.isNotEmpty()) {
             item {
-                Text(
+                PrivacyText(
                     stringResource(R.string.exam_page_finished, finished.size),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -199,7 +199,7 @@ fun ExamPage(
         // 未安排（底部）
         if (unarranged.isNotEmpty()) {
             item {
-                Text(
+                PrivacyText(
                     stringResource(R.string.exam_page_unarranged, unarranged.size),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -208,7 +208,7 @@ fun ExamPage(
             }
             items(unarranged.size) { index ->
                 InfoCard {
-                    Text(unarranged[index].courseName, fontWeight = FontWeight.Medium)
+                    PrivacyText(unarranged[index].courseName, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -260,13 +260,13 @@ private fun SkeletonLine(modifier: Modifier, height: androidx.compose.ui.unit.Dp
 @Composable
 private fun ExamCard(exam: XmuExam) {
     InfoCard {
-        Text(exam.courseName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text(
+        PrivacyText(exam.courseName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        PrivacyText(
             "${exam.date}  ${exam.timeRange}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 2.dp),
         )
-        Text(
+        PrivacyText(
             exam.room,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 1.dp),
@@ -275,7 +275,7 @@ private fun ExamCard(exam: XmuExam) {
 }
 
 /** 考试结束时刻（epoch 毫秒）：日期 + 时间段结束时间；跨午夜（结束早于开始）日期 +1。
- *  解析失败返回 Long.MAX_VALUE（视为未完成，避免误归已完成）。 */
+ *解析失败返回 Long.MAX_VALUE（视为未完成，避免误归已完成）。 */
 private fun examEndEpochMillis(exam: XmuExam): Long {
     val date = runCatching { java.time.LocalDate.parse(exam.date) }.getOrNull() ?: return Long.MAX_VALUE
     val parts = exam.timeRange.split("-").map { it.trim() }

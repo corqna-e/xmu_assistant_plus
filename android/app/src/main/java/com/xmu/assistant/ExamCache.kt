@@ -53,7 +53,7 @@ internal object ExamCache {
             .putString(KEY_TERM, summary.termCode)
             .putLong(KEY_SAVED_EPOCH_DAY, java.time.LocalDate.now().toEpochDay())
         // 淘汰：学期槽只保留最近 MAX_TERM_SLOTS 个（多年累积不会无限膨胀）。
-        // 注意并入本次新写入的 key：prefs.all 读的是 apply() 前的快照，不含新键，
+        //注意并入本次新写入的 key：prefs.all 读的是 apply 前的快照，不含新键，
         // 否则新增第 13 个学期时 dropLast 删不到任何键、槽位上限失效。
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val termKeys = (prefs.all.keys + "$KEY_TERM_PREFIX${summary.termCode}")
@@ -97,8 +97,8 @@ internal object ExamCache {
     }.getOrDefault(emptyList())
 
     /** 聚合所有已缓存学期的考试（跨学期提醒调度用）。
-     *  去重键：优先考试 id；服务端缺 id 时退化为「课程|日期|时间」复合键——
-     *  否则多场无 id 考试共享空 id，会被误合并只剩第一场，提醒随之丢失。 */
+     *去重键：优先考试 id；服务端缺 id 时退化为「课程|日期|时间」复合键——
+     *否则多场无 id 考试共享空 id，会被误合并只剩第一场，提醒随之丢失。 */
     fun loadAllExams(context: Context): List<XmuExam> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val seen = HashSet<String>()

@@ -13,7 +13,7 @@ import android.service.quicksettings.TileService
  *
  * 与 App 内开关走同一启停链路：
  * - 开：monitorDesired = true + startForegroundService(RollcallMonitorService)
- * - 关：requestInvalidateActiveRun() + monitorDesired = false + stopService
+ *- 关：requestInvalidateActiveRun + monitorDesired = false + stopService
  * - 未登录（cookie 为空）：磁贴置灰提示，点击带去首页登录（磁贴环境无输入界面）
  *
  * 状态判定复用 shouldStartMonitorWorker（monitorDesired && cookie 非空），

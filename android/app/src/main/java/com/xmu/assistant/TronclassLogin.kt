@@ -3,6 +3,7 @@ package com.xmu.assistant
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import android.util.Base64
+import android.util.Log
 import org.json.JSONObject
 import java.net.URL
 import java.net.URLEncoder
@@ -35,31 +36,23 @@ internal class TronclassLogin(
             "redirect_uri" to redirectUri,
         )
 
-        val first = request("$authUrl?$authParams").requireNotServerError("登录跳转")
-        val second = request(resolve(first.location ?: error("登录跳转失败"), authUrl)).requireNotServerError("登录跳转")
-        val loginPage = request(resolve(second.location ?: error("登录页面跳转失败"), authUrl)).requireNotServerError("登录页面")
-        val salt = Regex("""id="pwdEncryptSalt"\s+value="([^"]+)"""").find(loginPage.body)?.groupValues?.get(1)
-            ?: error("无法读取登录加密参数")
-        val execution = Regex("""name="execution"\s+value="([^"]+)"""").find(loginPage.body)?.groupValues?.get(1)
-            ?: error("无法读取登录流水号")
-
-        val encrypted = encryptPassword(password, salt)
-        val loginForm = form(
-            "username" to username,
-            "password" to encrypted,
-            "captcha" to "",
-            "_eventId" to "submit",
-            "cllt" to "userNameLogin",
-            "dllt" to "generalLogin",
-            "lt" to "",
-            "execution" to execution,
-        )
-        // 错误分类：服务端 5xx/坏页 ≠ 密码错误——避免把服务繁忙误报成"账号或密码可能不正确"，
-        // 误导用户反复重试登录（额外风控暴露）。
-        val afterPassword = request(loginPage.url, method = "POST", body = loginForm).requireNotServerError("密码提交")
-        val afterIdentity = request(resolve(afterPassword.location ?: error("账号或密码可能不正确"), loginPage.url))
+        var page = openLoginPage(authUrl, authParams)
+        var afterPassword = submitPassword(page, username, password)
+        if (afterPassword.isLoginPageLanding()) {
+            // 服务端偶发把密码提交打回登录页（流水号/会话失配，非密码问题）：换全新会话重来一次。
+            // 绝不能复用当前会话重试——该会话已被标 needCaptcha，再提交必被拒，且会多记一次失败。
+            Log.w(TAG, "password submit bounced back to login page, retrying once with a fresh session")
+            jar.clear()
+            page = openLoginPage(authUrl, authParams)
+            afterPassword = submitPassword(page, username, password)
+            if (afterPassword.isLoginPageLanding()) {
+                Log.w(TAG, "password submit bounced twice, giving up")
+                throw IllegalStateException("登录会话已失效，请重新登录")
+            }
+        }
+        val afterIdentity = request(resolve(afterPassword.location ?: error("登录回调失败"), page.url))
             .requireNotServerError("身份确认")
-        val callback = resolve(afterIdentity.location ?: error("登录回调失败"), loginPage.url)
+        val callback = resolve(afterIdentity.location ?: error("登录回调失败"), page.url)
         val code = Regex("""[?&]code=([^&]+)""").find(callback)?.groupValues?.get(1)
             ?: error("登录回调没有返回 code")
 
@@ -91,6 +84,75 @@ internal class TronclassLogin(
         if (code in 500..599) error("教务服务繁忙（$step），请稍后重试")
         return this
     }
+
+    /** 登录页三跳（Keycloak → broker → 统一认证表单），返回可提交的表单地址与加密参数。 */
+    private fun openLoginPage(authUrl: String, authParams: String): LoginPage {
+        val first = request("$authUrl?$authParams").requireNotServerError("登录跳转")
+        val second = request(resolve(first.location ?: error("登录跳转失败"), authUrl)).requireNotServerError("登录跳转")
+        val loginPage = request(resolve(second.location ?: error("登录页面跳转失败"), authUrl)).requireNotServerError("登录页面")
+        val salt = Regex("""id="pwdEncryptSalt"\s+value="([^"]+)"""").find(loginPage.body)?.groupValues?.get(1)
+            ?: error("无法读取登录加密参数")
+        val execution = Regex("""name="execution"\s+value="([^"]+)"""").find(loginPage.body)?.groupValues?.get(1)
+            ?: error("无法读取登录流水号")
+        return LoginPage(loginPage.url, salt, execution)
+    }
+
+    /**
+     * 提交账密。失败分类（实测统一认证口径）：
+     * - 密码错/风控拒/需验证码 → HTTP 401 + 页面 `formErrorTip2` 文案，App 侧过去一律翻译成
+     *"账号或密码可能不正确"，把风控与验证码也误报成密码错，用户只会反复重试、越试越死；
+     * - 流水号/会话失配 → 302 打回登录页（由调用方换新会话重试一次）；
+     * - 5xx → 服务繁忙。
+     */
+    private fun submitPassword(page: LoginPage, username: String, password: String): LoginHttpResponse {
+        val loginForm = form(
+            "username" to username,
+            "password" to encryptPassword(password, page.salt),
+            "captcha" to "",
+            "_eventId" to "submit",
+            "cllt" to "userNameLogin",
+            "dllt" to "generalLogin",
+            "lt" to "",
+            "execution" to page.execution,
+        )
+        val response = request(page.url, method = "POST", body = loginForm).requireNotServerError("密码提交")
+        // 无重定向 + 4xx，或 200 但页面带了错误文案：都属服务端明确拒绝，交给分类器决定提示，
+        // 不能再笼统地报"账号或密码可能不正确"。
+        if (response.location == null &&
+            (response.code in 400..499 || errorTipOf(response.body).isNotBlank())
+        ) {
+            classifyRejection(response)
+        }
+        return response
+    }
+
+    /** 401/403/429 按页面文案分流。只记状态码、needCaptcha 与文案摘要，绝不记密码或密文。 */
+    private fun classifyRejection(response: LoginHttpResponse): Nothing {
+        val tip = errorTipOf(response.body)
+        val needCaptcha = Regex("""var needCaptcha = "([^"]*)"""").find(response.body)?.groupValues?.get(1).orEmpty()
+        Log.w(TAG, "login rejected: code=${response.code} needCaptcha=$needCaptcha tip=${tip.take(60)}")
+        val message = when {
+            "验证码" in tip -> "登录需要验证码，请先用手机浏览器登录一次再回来重试"
+            "锁定" in tip -> "账号已被锁定，请到统一身份认证站点解锁后再试"
+            "非常用" in tip -> "账号被判定为非常用登录或密码有误，请先用手机浏览器登录确认密码"
+            response.code == 429 -> "登录请求过于频繁，请约 30 分钟后重试"
+            response.code == 403 -> "登录请求被拒绝（403），请稍后重试"
+            else -> "账号或密码可能不正确"
+        }
+        throw IllegalStateException(message)
+    }
+
+    /** 从错误页取服务端提示文案（`formErrorTip2` 与 `showErrorTip` 两种模板）。 */
+    private fun errorTipOf(body: String): String =
+        Regex("""id="formErrorTip2"[^>]*>\s*<span>([^<]*)</span>""").find(body)?.groupValues?.get(1)?.trim()
+            ?: Regex("""id="showErrorTip"[^>]*>\s*<span>([^<]*)</span>""").find(body)?.groupValues?.get(1)?.trim()
+            ?: ""
+
+    /** 密码提交被打回登录页（无 ticket），说明会话/流水号失配，不是密码错。 */
+    private fun LoginHttpResponse.isLoginPageLanding(): Boolean =
+        code in 300..399 && location?.contains("/authserver/login") == true
+
+    private data class LoginPage(val url: String, val salt: String, val execution: String)
 
     private fun encryptPassword(password: String, salt: String): String {
         val plaintext = randomString(64) + password
@@ -125,6 +187,10 @@ internal class TronclassLogin(
         )
         jar.read(response.headers, url)
         return response
+    }
+
+    private companion object {
+        const val TAG = "XmuLogin"
     }
 
     private fun form(vararg pairs: Pair<String, String>): String =

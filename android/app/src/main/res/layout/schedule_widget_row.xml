@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--今日课程行「时间 / 课名 / 地点」字号整体放大一档；
+     明日课程区域与卡片标题、周次、空态、footer 字号一律不动。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_row"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
@@ -9,7 +12,7 @@
     android:paddingBottom="4dp">
 
     <LinearLayout
-        android:layout_width="50dp"
+        android:layout_width="54dp"
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
@@ -18,7 +21,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textColor="@color/widget_accent"
-            android:textSize="13sp"
+            android:textSize="14sp"
             android:textStyle="bold"
             android:maxLines="1" />
 
@@ -28,7 +31,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="3dp"
             android:textColor="@color/widget_secondary_text"
-            android:textSize="11sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 
     <LinearLayout
@@ -43,7 +46,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/widget_primary_text"
-            android:textSize="13sp"
+            android:textSize="14sp"
             android:textStyle="bold"
             android:maxLines="1"
             android:ellipsize="end" />
@@ -54,7 +57,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="3dp"
             android:textColor="@color/widget_secondary_text"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:maxLines="1"
             android:ellipsize="end" />
     </LinearLayout>

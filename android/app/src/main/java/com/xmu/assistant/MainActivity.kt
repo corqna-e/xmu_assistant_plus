@@ -3,6 +3,8 @@ package com.xmu.assistant
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.SystemClock
 import android.net.Uri
@@ -38,6 +40,9 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     private var openedEventId by mutableStateOf("")
     private var openedPage by mutableStateOf("")
+    // 桌面小组件要求「今日课程 → 日程页、周课表 → 周课表页」，两者同属「课表」页，
+    // 靠这个附加字段指定进入时强制切换的视图（WEEK / AGENDA）。
+    private var openedScheduleView by mutableStateOf("")
     // 深链递增序号：内容相等的重复深链（如连续点同一桌面小卡片）也必须重新消费。
     // 原「内容相等」一次性消费（consumedPage != openedPage）会让第二次点击失效——
     // LaunchedEffect key 未变连 effect 都不重启，页面停留在首页（进程存活时必现）。
@@ -56,15 +61,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 诊断环形缓冲需要一个进程级 context 才能落盘（后台 worker 也会写）。
+        Diagnostics.install(this)
         openedEventId = intent.data?.lastPathSegment.orEmpty()
         openedPage = intent.getStringExtra("open_page").orEmpty()
+        openedScheduleView = intent.getStringExtra("open_schedule_view").orEmpty()
         deepLinkSeq = savedInstanceState?.getInt(STATE_DEEP_LINK_SEQ, 1) ?: 1
         // 注册「每日自动同步课表 + 桌面小卡片」后台任务（KEEP 策略幂等：同 key 只保留一个周期任务）。
         // 挪到 IO 线程：enqueue 内部是同步 Room 写入，主线程执行会拖慢冷启动首帧。
         // 同协程内顺带：
         // 1) 预热加密设置（MasterKey+EncryptedSharedPreferences 构建较慢），与组合期首次访问竞速；
         // 2) 教务会话保温——单请求探测既有教务 Cookie（滑动过期机制下保持热态），
-        //    减少用户打开成绩/课表页时的完整 CAS 认证链。绝不自动续登（mayRelogin 恒 false）。
+        //减少用户打开成绩/课表页时的完整 CAS 认证链。绝不自动续登（mayRelogin 恒 false）。
         lifecycleScope.launch(Dispatchers.IO) {
             val warmSettings = runCatching { AssistantSettings(this@MainActivity) }.getOrNull()
             ScheduleWidgetSyncWorker.scheduleDaily(applicationContext)
@@ -96,7 +104,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (settingsReady) {
-                XmuAssistantApp(this, openedEventId, openedPage, deepLinkSeq)
+                XmuAssistantApp(this, openedEventId, openedPage, deepLinkSeq, openedScheduleView)
             } else {
                 Surface {}
             }
@@ -123,12 +131,20 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         openedEventId = intent.data?.lastPathSegment.orEmpty()
         openedPage = intent.getStringExtra("open_page").orEmpty()
+        openedScheduleView = intent.getStringExtra("open_schedule_view").orEmpty()
         deepLinkSeq += 1
     }
 }
 
 @Composable
-fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPage: String = "", deepLinkSeq: Int = 1) {
+fun XmuAssistantApp(
+    activity: ComponentActivity,
+    openedEventId: String,
+    openedPage: String = "",
+    deepLinkSeq: Int = 1,
+    /**桌面小组件指定的课表视图（WEEK / AGENDA），空串表示不干预。 */
+    openedScheduleView: String = "",
+) {
     val settings = remember { AssistantSettings(activity) }
     val sessionEpoch = ProcessSessionEpoch.instance
     val sessionOwner = remember { sessionEpoch.attachOwner() }
@@ -162,9 +178,9 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
     }
     // 支持从桌面小卡片点击直接进入指定页（如「课表」）；无指定则回首页。
     // rememberSaveable：旋转屏幕（Activity 重建）后停留在原页，而不是跳回首页。
-    val knownPages = listOf("首页", "签到情况", "成绩", "课表", "考试安排", "课程课件", "通知", "教程", "策略")
+    // 页面标识改为 Page 枚举，深链字符串在入口处一次性转换。
     var page by rememberSaveable {
-        mutableStateOf(openedPage.takeIf { it in knownPages } ?: "首页")
+        mutableStateOf(Page.fromId(openedPage) ?: Page.HOME)
     }
     // 桌面小卡片等外部跳转消费：按 Activity 递增序号（deepLinkSeq）一次性处理，
     // 修复「内容相等」判断导致同一 Widget/通知第二次点按不切页的必现 bug。
@@ -173,15 +189,33 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
     // 重建帧 seq==consumed 时跳过，rememberSaveable 恢复的 page 不被旧深链覆盖；
     // 重建后的新 onNewIntent seq 必然大于 consumed，不会被当作回放吞掉。
     var consumedDeepLinkSeq by rememberSaveable { mutableIntStateOf(0) }
+    // 工具页（更多页入口们）的返回目标：首页进→回首页，更多进→回更多。
+    // 系统返回键/顶部返回箭头/底部「更多」弯箭头都回到这个目标（backTarget）。
+    var toolReturnPage by rememberSaveable { mutableStateOf(Page.MORE) }
+    // 设置下的下一级界面（当前周次 / 自动签到策略 / 考试提醒时间 / 课程坐标）
+    // 返回目标原先写死是「策略」。这些页现在有两个入口 —— 设置页逐级点进来，或首页卡片直接
+    // 进入（v94）—— 所以要记住真实来源页（首页进→回首页，设置进→回设置，课表进→回课表）。
+    var nestedReturnPage by rememberSaveable { mutableStateOf(Page.SETTINGS) }
+    // 桌面小组件点开时要求落到指定视图（今日课程卡 → 日程，周课表卡 → 周课表）。
+    // 用「值 + 自增序号」下发给课表页，序号变化才应用一次，普通重组不会反复覆盖用户的切换。
+    var scheduleViewRequest by remember { mutableStateOf("") }
+    var scheduleViewRequestSeq by remember { mutableIntStateOf(0) }
     LaunchedEffect(deepLinkSeq) {
         if (deepLinkSeq <= consumedDeepLinkSeq) return@LaunchedEffect
-        if (openedPage in knownPages && openedPage != page) {
-            page = openedPage
+        val deepLinkPage = Page.fromId(openedPage)
+        if (deepLinkPage != null && deepLinkPage != page) {
+            // 深链直进工具页没有明确的来源页，返回目标回默认的「更多」
+            toolReturnPage = Page.MORE
+            page = deepLinkPage
+        }
+        if (openedScheduleView == ScheduleViewModeNames.WEEK || openedScheduleView == ScheduleViewModeNames.AGENDA) {
+            scheduleViewRequest = openedScheduleView
+            scheduleViewRequestSeq += 1
         }
         // 签到通知深链（xmurollcall://rollcall/<id>）不带 open_page 但带事件 id：
-        // 用户不在签到页时切到签到页，保证通知点按能看到对应事件。
-        if (openedEventId.isNotBlank() && page != "签到情况") {
-            page = "签到情况"
+        // 保证通知点按能看到对应事件。
+        if (openedEventId.isNotBlank() && page != Page.ROLLCALL) {
+            page = Page.ROLLCALL
         }
         consumedDeepLinkSeq = deepLinkSeq
     }
@@ -223,6 +257,8 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
     // 记住选中的课程 id（rememberSaveable：转屏/进程重建后恢复），课程对象从 courses 派生。
     // 不直接保存 CourseSummary，避免自定义 Saver，也保证课程列表刷新后仍能对应。
     var selectedCourseId by rememberSaveable { mutableStateOf<String?>(null) }
+    // 课程课件页多选：用 List<String> 保证 rememberSaveable 可直接持久化。
+    var selectedCourseIds by rememberSaveable { mutableStateOf(listOf<String>()) }
     val selectedCourse = remember(courses, selectedCourseId) {
         courses.firstOrNull { it.id == selectedCourseId }
     }
@@ -239,10 +275,17 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
     var monitorTransitionInProgress by remember { mutableStateOf(false) }
     var monitorTransitionId by remember { mutableStateOf(0L) }
     val requestGate = remember { RequestGate() }
-    // 外观主题模式（浅色/深色/跟随系统），用户可在策略页底部切换
+    // 外观主题模式（浅色/深色/跟随系统），用户可在「更多 → 通知与外观」切换
     var themeMode by remember { mutableStateOf(settings.themeMode) }
+    // 隐私模式（大标题逐字换字母、签到→举手、成绩→游戏点）。首帧用 prefs 值初始化全局状态，
+    //同时恢复用户自定义的换词规则恢复「标题是否替换」开关。
+    remember {
+        PrivacyModeState.set(settings.privacyMode)
+        PrivacyModeState.loadRules(settings.privacyRules)
+        PrivacyModeState.loadTitleMasked(settings.privacyTitleMasked)
+    }
 
-    // toastSeq：相同文案连续 show() 时值不变、旧计时器不重启会把「新」toast 提前清掉，
+    //toastSeq：相同文案连续 show 时值不变、旧计时器不重启会把「新」toast 提前清掉，
     // 用递增序号作 effect key 保证每次 show 都重新计时
     var toastSeq by remember { mutableStateOf(0L) }
 
@@ -266,6 +309,21 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
         toastSeq += 1
     }
 
+    /**明确成功的提示走绿色 —— 文案里带「失败 0」这类字样时不再被子串规则误判成红色。 */
+    fun showSuccess(message: String) {
+        toast = message
+        toastSeverity = ToastSeverity.SUCCESS
+        toastSeq += 1
+    }
+
+    // 加密存储自愈后的一次性提示。Keystore 失效会丢掉本地登录态，
+    // 而不是对着登录页猜自己是不是被登出了。
+    LaunchedEffect(Unit) {
+        if (AssistantSettings.consumeStorageResetNotice(activity)) {
+            showWarning("安全存储已重置，请重新登录")
+        }
+    }
+
     // 桌面小卡片手动添加指引弹窗：一加/ColorOS/vivo 等桌面硬拒系统一键 pin 时弹出，
     // 引导用户走系统「小部件」入口（按钮跳桌面设置页）。
     var widgetGuideOpen by remember { mutableStateOf(false) }
@@ -274,12 +332,13 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
     // 权限时会谎报 pin 成功、实际静默失败，校验失败后引导用户去应用设置开启权限。
     var widgetPermissionGuideOpen by remember { mutableStateOf(false) }
 
-    // 瞬时提示自动消退：toast 是页面底部内嵌横幅，此前只有切页/下一次 show() 才清除，
-    // "正在刷新，请稍候""已读取 N 门"这类提示会一直挂着（用户误以为刷新卡死）。
-    // 3 秒后自动清空；以 toastSeq 为 key：新一轮 show()（含同文案）取消旧计时并重新计时。
+    //瞬时提示自动消退：toast 是页面底部内嵌横幅，此前只有切页/下一次 show 才清除，
+    // "正在刷新，请稍候""已读取 N 门"这类提示会一直挂着。
+    //3 秒后自动清空；以 toastSeq 为 key：新一轮 show（含同文案）取消旧计时并重新计时。
+    // 4 秒，3 秒对带操作提示的文案偏短。
     LaunchedEffect(toastSeq) {
         if (toast.isNotBlank()) {
-            kotlinx.coroutines.delay(3000)
+            kotlinx.coroutines.delay(4000)
             toast = ""
         }
     }
@@ -320,16 +379,7 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
         },
     )
 
-    // 进入考试安排页：立即显示缓存（复用上一次结果），后台悄悄检查变化；
-    // 有缓存时不显示"正在刷新"表达，检测到变化才更新（悄悄检查模式）。
-    LaunchedEffect(page) {
-        if (page != "考试安排") return@LaunchedEffect
-        if (!loggedIn || cookieHeader.isBlank()) return@LaunchedEffect
-        // 登录/恢复在途时跳过本次进入检查（风控红线：不并发打两个身份域），
-        // 登录完成后再次进入页面或手动刷新即可加载。
-        if (accountTransitionInProgress) return@LaunchedEffect
-        exam.silentRefresh()
-    }
+    // 进入考试安排页不再单独刷新，统一由「进入客户端全量刷新」承担（见下方）。
 
     // —— 分块状态持有者（状态 + 动作独立成类，模式同 ExamSectionState）——
     // 签到：状态与动作在 RollcallSectionState，组合侧只保留编排。
@@ -351,17 +401,7 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
             setPendingSessionRetry = { pendingSessionRetry = it },
         )
     }
-    // 进入签到情况页：最近十次签到 SWR——从未加载过自动拉一次；已加载但超过新鲜
-    // 窗口（用户拍板 5 分钟）才后台重校，窗口内静默用缓存秒开不重复拉取。
-    // 注意：须放在 rollcall 声明之后（引用其状态）。
-    LaunchedEffect(page) {
-        if (page != "签到情况") return@LaunchedEffect
-        if (!loggedIn || cookieHeader.isBlank()) return@LaunchedEffect
-        if (accountTransitionInProgress) return@LaunchedEffect
-        val stale = System.currentTimeMillis() - rollcall.historyUpdatedAtMillis >
-            ROLLCALL_HISTORY_FRESHNESS_MILLIS
-        if (!rollcall.historyLoaded || stale) rollcall.refreshHistory()
-    }
+    // 签到历史也不再「进入页面就刷」，统一并入进入客户端的全量刷新。
     // 成绩：状态与动作在 ScoreSectionState；持久化（scoreRecordsJson 等）仍留在组合侧 settings。
     val scores = remember {
         ScoreSectionState(
@@ -428,6 +468,7 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
             show = ::show,
             showWarning = ::showWarning,
             showError = ::showError,
+            showSuccess = ::showSuccess,
             requireLogin = ::requireLogin,
             loggedIn = { loggedIn },
             cookieHeader = { cookieHeader },
@@ -438,7 +479,7 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
             academicCache = { academicCache },
             setAcademicCache = { updateAcademicCache(it) },
             setAcademicCacheJson = { settings.academicCacheJson = it },
-            isSelectedCourse = { selectedCourse?.id == it },
+            isSelectedCourse = { it in selectedCourseIds },
             setPendingSessionRetry = { pendingSessionRetry = it },
         )
     }
@@ -480,6 +521,7 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
         coursesLoading = false
         coursesRefreshError = ""
         selectedCourseId = null
+        selectedCourseIds = emptyList()
         courseware.clearAll()
         // 课程/课件缓存持久化同样清掉（与成绩清理对齐）：登出后重启不残留旧账号课程
         settings.academicCacheJson = ""
@@ -571,6 +613,7 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
                         }
                     }
                     courses = list
+                    selectedCourseIds = selectedCourseIds.filter { id -> id in list.map { it.id } }
                     if (selectedCourseId != null && selectedCourseId !in list.map { it.id }) {
                         selectedCourseId = null
                         courseware.clearAll()
@@ -599,10 +642,10 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
         workScope.launch(Dispatchers.IO) {
             runCatching {
                 if (next.systemEnabled) sendLocalTestNotification(activity)
-                if (next.pushPlusEnabled) PushPlusSender(next.pushPlusToken).send("虾大助手 测试通知", "如果你收到这条消息，说明微信通知已配置成功。")
-                if (next.qqMailEnabled) QQMailSender(next.qqMailSender, next.qqMailPassword, next.qqMailRecipient, next.qqMailPorts).send(
-                    "虾大助手 测试通知",
-                    "如果你收到这封邮件，说明 QQ 邮箱提醒已配置成功。",
+                if (next.pushPlusEnabled) PushPlusSender(next.pushPlusToken).send("虾大助手Plus 测试通知", "如果你收到这条消息，说明微信通知已配置成功。")
+                if (next.qqMailEnabled) QQMailSender(next.qqMailSender, next.qqMailPassword, next.qqMailRecipient, next.qqMailPorts, next.qqMailHost).send(
+                    "虾大助手Plus 测试通知",
+                    "如果你收到这封邮件，说明邮箱提醒已配置成功。",
                 )
                 if (!next.pushPlusEnabled && !next.qqMailEnabled && !next.systemEnabled) error("请先开启一种通知方式")
             }.onSuccess {
@@ -646,6 +689,8 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
                         ) {
                             settings.cookieHeader = result.cookieHeader
                             settings.markLoginSucceeded()
+                            // 冷启动/掉线后的自动续登是后台行为，不跳「使用准备与教程」；
+                            // 该页只在用户手动登录（含切换账号）成功后进入。
                             cookieHeader = result.cookieHeader
                             loggedIn = true
                             startupSessionReady = true
@@ -690,7 +735,7 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
                         }
                     } finally {
                         recovery.finishAutoLogin(recoveryToken)
-                        // 与成功分支对齐：无条件复位。此前依赖 busy.isBlank() 才复位，
+                        //与成功分支对齐：无条件复位。此前依赖 busy.isBlank 才复位，
                         // 而调用方（recoverExpiredModule/startStartupSessionRecovery）进入前
                         // 已把 busy 置为非空，accept 校验不通过时 flag 永不复位 → 首页按钮死锁。
                         accountTransitionInProgress = false
@@ -772,8 +817,8 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
     }
 
     fun recoverExpiredModule(retry: ModuleReadRetry) {
-        // 用户正在首页手动登录时绝不叠加自动续登：两条路径各自有单飞去重，
-        // 但互不知晓对方，同时发起会重复打身份域登录接口（CAS 风控红线）。
+        // 两条路径各自有单飞去重，
+        // 但互不知晓对方，同时发起会重复打身份域登录接口。
         if (accountTransitionInProgress) return
         if (settings.autoLoginPolicy != AutoLoginPolicy.ENABLED || username.isBlank() || password.isBlank()) {
             showWarning("登录已过期，请手动登录")
@@ -783,13 +828,13 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
         // 对课表做 TronClass 登录无效，只会白白多打一次登录（风控隐患）。
         // 课表恢复直接刷新即可：fetchScheduleWithNetworkRetry 内部会经
         // ensureScheduleSession（用 settings.scoreCookieHeader）自动补 CAS 会话。
-        // 注意：此处不能调用 invalidateMainSessionUi()——它会清空内存 cookieHeader，
-        // 导致 refreshSchedule 的 requireLogin() 直接拦截，恢复流程根本跑不到。
+        //注意：此处不能调用 invalidateMainSessionUi——它会清空内存 cookieHeader，
+        //导致 refreshSchedule 的 requireLogin 直接拦截，恢复流程根本跑不到。
         if (retry.request == ModuleReadRequest.SCHEDULE) {
             startupSessionReady = false
             sessionEpoch.invalidate(sessionOwner)
             // 恢复课表会经 ensureScheduleSession 走 CAS(ids/jw 域)登录：
-            // 置位 transition 禁止首页手动登录/退出与之并发（双身份域同时打登录 = 风控红线）。
+            // 置位 transition 禁止首页手动登录/退出与之并发。
             // refreshSchedule 完成/失败回调里统一复位。
             accountTransitionInProgress = true
             if (!schedule.refresh(alreadyRetriedAfterRecovery = true)) {
@@ -845,11 +890,107 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
         }
     }
 
-    fun onModuleEntered(targetPage: String) {
+    fun onModuleEntered(targetPage: Page) {
+        //进入设置下的下一级界面时记录来源页。只在外层页面进入时记录 ——
+        // 从它自己的下一级界面（添加地点 / 现场采点）回到本页时，不覆盖原来源。
+        if (targetPage in nestedSettingPages && page !in nestedSettingPages &&
+            page !in nestedSettingChildPages
+        ) {
+            nestedReturnPage = page
+        }
+        // 记录工具页的来源：只有从首页/更多进入时才刷新返回目标；
+        // 工具页之间互跳（如成绩→专业排名再回）不覆盖来源。
+        if (targetPage in toolPages && (page == Page.HOME || page == Page.MORE)) {
+            toolReturnPage = page
+        }
         page = targetPage
         toast = ""
-        val module = refreshModuleForPage(targetPage)
-        pendingModuleRefresh.enter(module, startupSessionReady)?.let(::dispatchModuleRefresh)
+        // 切换单个页面不再自动刷新数据；全量刷新只发生在进入客户端时。
+    }
+
+    // 当前页的返回目标：工具页回来源页（首页进→首页，更多进→更多），
+    // 设置下的下一级界面回它的真实来源页（首页卡片进→首页，设置进→设置），
+    // 其余保持固定层级（专业排名→成绩、添加地点→课程坐标等）。
+    val backTarget = when {
+        page in nestedSettingPages -> nestedReturnPage
+        page in toolPages -> toolReturnPage
+        else -> parentPage(page)
+    }
+
+    //—— 每次进入客户端（冷启动 / 从后台回到前台）全量刷新一次，45 分钟节流 ——
+    // 「进入客户端自动刷新所有界面数据，进入单页面就不自动刷新」。
+    // 串行错峰 800ms：多模块同时发起 academic CAS 续登会打两个身份域。
+    // v12 修复「第一次登录不自动刷新」两处根因：
+    //1) 旧节流用 SystemClock.elapsedRealtime，进程重启会归零，而 rememberSaveable
+    //里存的是上个进程的大数 → now-last 为负 → 被误判成「刚刷过」，冷启动直接跳过；
+    //2) 旧 LaunchedEffect 只在 loggedIn 变化时跑一次，那一刻往往仍在
+    //accountTransitionInProgress / cookie 尚未写好，函数开头直接 return，之后再无触发。
+    // 现在改用墙钟 + 登录态上升沿强制刷一次，并把「会话可用」纳入 effect key。
+    var lastFullRefreshMillis by rememberSaveable { mutableStateOf(0L) }
+    var fullRefreshInFlight by remember { mutableStateOf(false) }
+    var wasLoggedIn by remember { mutableStateOf(false) }
+
+    /**
+     *冷启动首次刷新前等默认网络就绪（最多 4 秒，已就绪立即返回）。
+     * 刚开机时 Wi-Fi 常在关联中、校园网尚未认证，首个请求必然失败，而它紧跟着就会
+     * 把「网络连接失败」顶到首页「自动签到」卡片下方。只在首次进入时等待，
+     * 之后的前台回切刷新不额外引入延迟。
+     */
+    suspend fun awaitStartupNetwork(timeoutMillis: Long = 4_000L) {
+        val manager = activity.getSystemService(ConnectivityManager::class.java) ?: return
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val ready = runCatching {
+                val capabilities = manager.activeNetwork?.let(manager::getNetworkCapabilities)
+                capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }.getOrDefault(false)
+            if (ready) return
+            kotlinx.coroutines.delay(300L)
+        }
+    }
+
+    fun refreshAllModulesOnEntry(force: Boolean = false, waitForNetwork: Boolean = false) {
+        if (!loggedIn || accountTransitionInProgress || cookieHeader.isBlank()) return
+        if (fullRefreshInFlight) return
+        val now = System.currentTimeMillis()
+        val elapsed = now - lastFullRefreshMillis
+        // 时间回拨 / 上次进程遗留的旧值会让 elapsed 为负，此时不能当作「刚刷过」。
+        if (!force && lastFullRefreshMillis != 0L && elapsed in 0 until 45 * 60 * 1000L) return
+        fullRefreshInFlight = true
+        lastFullRefreshMillis = now
+        workScope.launch(Dispatchers.Main) {
+            try {
+                if (waitForNetwork) awaitStartupNetwork()
+                val steps: List<() -> Unit> = listOf(
+                    { rollcall.refresh(showFeedback = false) },
+                    { rollcall.refreshHistory() },
+                    { schedule.refresh() },
+                    { scores.refresh() },
+                    { refreshCourses() },
+                    { exam.silentRefresh() },
+                )
+                steps.forEachIndexed { index, step ->
+                    if (index > 0) kotlinx.coroutines.delay(800L)
+                    if (!loggedIn || accountTransitionInProgress) return@launch
+                    step()
+                }
+            } finally {
+                fullRefreshInFlight = false
+            }
+        }
+    }
+    val sessionUsable = loggedIn && startupSessionReady &&
+        !accountTransitionInProgress && cookieHeader.isNotBlank()
+    LaunchedEffect(startupStartGeneration, startupSessionReady, sessionUsable) {
+        if (startupStartGeneration == 0 || !startupSessionReady || !sessionUsable) return@LaunchedEffect
+        // 首次登录（含冷启动自动续登）绕过节流，保证第一次进来就有数据；
+        // 同时等网络就绪再发第一个请求（v40）。
+        val firstLogin = !wasLoggedIn
+        refreshAllModulesOnEntry(force = firstLogin, waitForNetwork = firstLogin)
+        wasLoggedIn = true
+    }
+    LaunchedEffect(loggedIn) {
+        if (!loggedIn) wasLoggedIn = false
     }
 
     LaunchedEffect(startupStartGeneration) {
@@ -875,7 +1016,7 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
     // 首页与签到页共用只读数据。首次登录、回到前台及停留期间均按已有新鲜度刷新；
     // 离开这两页或进入后台即停止轮询，不启动监控服务，也不提交签到。
     LaunchedEffect(page, startupSessionReady, loggedIn, accountTransitionInProgress) {
-        if (page !in setOf("首页", "签到情况") || !startupSessionReady ||
+        if (page !in setOf(Page.HOME, Page.ROLLCALL) || !startupSessionReady ||
             !loggedIn || accountTransitionInProgress) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
@@ -947,6 +1088,8 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
         setStartupSessionReady = { startupSessionReady = it },
         clearLoggedOutUi = ::clearLoggedOutUi,
         refreshMonitorHealth = ::refreshMonitorHealth,
+        // 登录成功后自动跳到「使用指南」，返回必须回首页（原先进来源是「更多」）。
+        onLoginTutorial = { toolReturnPage = Page.HOME; page = Page.TUTORIAL },
     )
 
     MainScreen(
@@ -981,6 +1124,8 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
         setWidgetPermissionGuideOpen = { widgetPermissionGuideOpen = it },
         courseState = CoursesUiState(courses, selectedCourse, coursesLoading, coursesRefreshError),
         courseWrites = courseWrites,
+        selectedCourseIds = selectedCourseIds,
+        setSelectedCourseIds = { selectedCourseIds = it },
         coursesUpdatedAtMillis = academicCache.coursesUpdatedAtMillis,
         coursewareUpdatedAtMillis = selectedCourse?.id
             ?.let { academicCache.coursewareUpdatedAtMillis[it] }
@@ -1017,10 +1162,20 @@ fun XmuAssistantApp(activity: ComponentActivity, openedEventId: String, openedPa
         requireLogin = ::requireLogin,
         show = ::show,
         onModuleEntered = ::onModuleEntered,
+        backTarget = backTarget,
         testNotifications = ::testNotifications,
         onRefreshCourses = { refreshCourses() },
         onOpenBackgroundSettings = ::openBackgroundSettings,
         refreshMonitorHealth = ::refreshMonitorHealth,
         requestNotificationPermissionIfNeeded = ::requestNotificationPermissionIfNeeded,
+        // 底栏「首页」键当页再次点击 → 立刻重刷各页面数据（课表/签到/考试/成绩/课件）。
+        onHomeRefresh = {
+            if (requireLogin()) {
+                refreshAllModulesOnEntry(force = true)
+                show("正在刷新课表、签到、考试、成绩与课件")
+            }
+        },
+        scheduleViewRequest = scheduleViewRequest,
+        scheduleViewRequestSeq = scheduleViewRequestSeq,
     )
 }

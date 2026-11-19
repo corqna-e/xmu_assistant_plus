@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -77,9 +76,9 @@ private fun RollcallDetails(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(courseTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text(typeAndTime)
-        supportingLines.forEach { Text(it) }
+        PrivacyText(courseTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        PrivacyText(typeAndTime)
+        supportingLines.forEach { PrivacyText(it) }
     }
 }
 
@@ -93,13 +92,13 @@ private fun RollcallFacts(
 ) {
     val presentation = progressPresentation(progress)
     Column(modifier = modifier, horizontalAlignment = alignment) {
-        Text(
+        PrivacyText(
             presentation.first,
             color = if (presentation.reliable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold,
             textAlign = textAlign,
         )
-        Text(presentation.second, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = textAlign)
+        PrivacyText(presentation.second, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = textAlign)
         if (numberCode != null) RollcallCode(numberCode, Modifier, textAlign, showCopy = false)
     }
 }
@@ -113,7 +112,7 @@ private fun RollcallCode(
 ) {
     val clipboard = LocalClipboardManager.current
     val label: @Composable (Modifier) -> Unit = { textModifier ->
-        Text(
+        PrivacyText(
             if (numberCode.isBlank()) "签到码 暂未获取" else "签到码 $numberCode",
             modifier = textModifier,
             fontWeight = if (numberCode.isBlank()) FontWeight.Normal else FontWeight.Bold,
@@ -129,7 +128,7 @@ private fun RollcallCode(
         ) {
             label(Modifier.weight(1f))
             if (numberCode.isNotBlank()) {
-                TextButton(onClick = { clipboard.setText(AnnotatedString(numberCode)) }) { Text("复制") }
+                TextButton(onClick = { clipboard.setText(AnnotatedString(numberCode)) }) { PrivacyText("复制") }
             }
         }
     } else {

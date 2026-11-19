@@ -9,11 +9,11 @@ import java.util.Locale
  * 教务 HTTP 公共基座：把「exam/score 确实同构」的部分收敛为一处，使判定不可能再漂移。
  *
  * - redirect follower：MAX_REDIRECTS 循环 + 登录域终止判定；关键域标记做成参数集合，
- *   各客户端传入自己的集合（exam 含 Keycloak 显式化，score 保持现状清单）；
+ *各客户端传入自己的集合（exam 含 Keycloak 显式化，score 保持现状清单）；
  * - request header 模板与 jar 读写（exam/score 同款模板本体，仅 Referer 不同 → 参数化；
- *   exam 的 POST 变体头经 applyPostHeaders 显式开启）；
+ *exam 的 POST 变体头经 applyPostHeaders 显式开启）；
  * - form urlEncode/post 编码（exam/schedule 同款 plain-URLEncoder 口径；score 的
- *   encodeFormComponent 带 `*`→%2A 语义不同，保留在其客户端内不并入）。
+ *encodeFormComponent 带 `*`→%2A 语义不同，保留在其客户端内不并入）。
  *
  * 网络口径红线：超时/UA/Referer/header 集/并发参数一律原值透传，本基座不改变任何
  * 请求形态；异常类型由各客户端经 onLoginTerminus/onExhaustedNonLogin/networkWrapper

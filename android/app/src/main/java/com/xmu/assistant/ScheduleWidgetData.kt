@@ -20,6 +20,13 @@ data class ScheduleWidgetCourse(
     val startSection: Int,
     val endSection: Int,
     val location: String,
+    /**该节次被本地调课改过，显示时加「[调]」前缀。 */
+    val isAdjusted: Boolean = false,
+    /**点开课程详情要用的完整字段。全部带默认值，旧缓存解码时留空即可。 */
+    val weekday: Int = 0,
+    val week: Int = 0,
+    val weeks: String = "",
+    val teachers: String = "",
 )
 
 data class ScheduleWidgetSnapshot(
@@ -63,6 +70,11 @@ object ScheduleWidgetData {
                         .put("startSection", course.startSection)
                         .put("endSection", course.endSection)
                         .put("location", course.location)
+                        .put("isAdjusted", course.isAdjusted)
+                        .put("weekday", course.weekday)
+                        .put("week", course.week)
+                        .put("weeks", course.weeks)
+                        .put("teachers", course.teachers)
                 }),
             )
 
@@ -79,6 +91,21 @@ object ScheduleWidgetData {
         decode(JSONObject(raw))
     }.getOrNull()
 
+    /**
+     *按日期精确取某一天的摘要（用「明日课程」预告）。
+     * 与 [load] 的区别：不做「取不到就回退到最近一条」的兜底，
+     * 拿不到就是拿不到，避免把上周的课当成明天的课显示。
+     */
+    fun loadDay(context: Context, epochDay: Long): ScheduleWidgetSnapshot? = runCatching {
+        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val days = runCatching { JSONArray(preferences.getString(KEY_DAYS, "[]")) }.getOrDefault(JSONArray())
+        for (index in 0 until days.length()) {
+            val day = days.optJSONObject(index) ?: continue
+            if (day.optLong("savedEpochDay") == epochDay) return decode(day)
+        }
+        null
+    }.getOrNull()
+
     private fun decode(root: JSONObject): ScheduleWidgetSnapshot {
         val rows = root.optJSONArray("courses") ?: JSONArray()
         val courses = ArrayList<ScheduleWidgetCourse>(rows.length())
@@ -91,6 +118,11 @@ object ScheduleWidgetData {
                 startSection = row.optInt("startSection"),
                 endSection = row.optInt("endSection"),
                 location = row.optString("location"),
+                isAdjusted = row.optBoolean("isAdjusted", false),
+                weekday = row.optInt("weekday", 0),
+                week = row.optInt("week", 0),
+                weeks = row.optString("weeks", ""),
+                teachers = row.optString("teachers", ""),
             )
         }
         return ScheduleWidgetSnapshot(

@@ -1,6 +1,7 @@
 package com.xmu.assistant
 
 import android.util.Base64
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -128,8 +129,8 @@ class XmuScoreAutoQueryClient internal constructor(
         val failedTerms = firstWave.filter { it.error != null }.map { it.term }
         // 部分成绩项失败时，仅当存在「会话失效类」失败（ScoreSessionExpiredException）才重登重试；
         // 纯网络抖动（IOException）与格式异常（ScoreJsonFormatException）都保持失败：
-        //   - IOException：弱网时避免触发重复 CAS 登录（风控红线）
-        //   - 格式异常（含 5xx/非鉴权 4xx/服务端坏页）：数据或服务问题，重登也无法修复，登录只会白打一次
+        // - IOException：弱网时避免触发重复 CAS 登录
+        //- 格式异常（含 5xx/非鉴权 4xx/服务端坏页）：数据或服务问题，重登也无法修复，登录只会白打一次
         val reloginNeeded = firstWave.any { it.error is ScoreSessionExpiredException }
         val retriedByCode = if (failedTerms.isEmpty() || !reloginNeeded || !mayRelogin()) {
             emptyMap()
@@ -152,7 +153,7 @@ class XmuScoreAutoQueryClient internal constructor(
         }.distinctBy { distinctKeyOf(it) }
         if (records.isEmpty() && failures.isNotEmpty()) {
             // 全部学期失败：抛出第一个真实错误，让上层正确区分网络/会话/格式问题，
-            // 而不是统一误报为「格式异常」（弱网时用户会看到错误的失败原因）。
+            // 而不是统一误报为「格式异常」。
             throw firstFailure ?: error("成绩接口返回格式异常")
         }
         return ScoreFetchResult(records, failures.map { it.substringBefore(":") })
@@ -172,8 +173,8 @@ class XmuScoreAutoQueryClient internal constructor(
         } catch (error: Throwable) {
             // 仅「会话失效」（ScoreSessionExpiredException：401/403/重定向 ids/登录页特征）才续登；
             // 网络抖动/格式异常（含 5xx、非鉴权 4xx、服务端坏页）直接抛出，
-            // 避免服务端或网络问题触发重复 CAS 登录（风控红线）；
-            // 会话世代已变化（用户已登出 / 已重新登录）也直接抛出，陈旧请求禁止续登。
+            // 避免服务端或网络问题触发重复 CAS 登录；
+            // 会话世代已变化也直接抛出，陈旧请求禁止续登。
             if (error is ScoreSessionExpiredException && mayRelogin()) {
                 loginAndGetToken()
                 return fetchTerms()
@@ -202,6 +203,10 @@ class XmuScoreAutoQueryClient internal constructor(
         val rawScore = optRealString("ZCJ").trim()
         val numericScore = rawScore.toDoubleOrNull()
         val officialPoint = optString("XFJD").trim().toDoubleOrNull()
+        // 等级制课程按换算表补绩点，并纳入 GPA 统计；
+        // 取不到合法字母等级（中文五级制、P/NP、—）时保持 null，不参与统计。
+        val nonPercentGrade = if (isPercentScore) null else nonPercentResultText(this, rawScore)
+        val letterPoint = nonPercentGrade?.let(::gradePointForLetterGrade)
         return XmuScoreRecord(
             courseCode = optRealString("KCH"),
             courseName = optRealString("KCM"),
@@ -209,32 +214,67 @@ class XmuScoreAutoQueryClient internal constructor(
             termCode = termCode,
             credit = optString("XF").toDoubleOrNull() ?: 0.0,
             score = if (isPercentScore) numericScore else null,
-            gradePoint = if (isPercentScore) officialPoint else null,
+            gradePoint = if (isPercentScore) officialPoint else letterPoint,
             gradeMode = scoreGradeMode(this),
-            resultText = if (isPercentScore) rawScore else nonPercentResultText(this, rawScore),
-            countsForStatistics = isPercentScore && numericScore != null && officialPoint != null,
+            resultText = if (isPercentScore) rawScore else nonPercentGrade ?: "—",
+            countsForStatistics = if (isPercentScore) {
+                numericScore != null && officialPoint != null
+            } else {
+                letterPoint != null
+            },
             countsForCompletedCredit = earnsCompletedCredit(this, rawScore),
             // 课序号：同学期同课程多次开课/重修/补考用 KXH 区分（去重键依赖，避免误删合法记录）
             courseSeq = optRealString("KXH"),
         )
     }
 
+    /**
+     * 非百分制（等级制/五级制等）成绩文本提取。
+     *
+     *说明不是缓存问题，
+     * 而是教务这一行的等级值根本不在原先硬编码的字段列表里，最后回退成了模式名。
+     * 这里改为「已知字段 + 整行扫描」两级兜底：只要这一行里任何字段的值是一个
+     * 合法等级文本（A/A-/B+/优/优秀/及格…），就把它取出来；模式名（等级制等）
+     * 一律不算成绩。实在找不到时显示「—」，不再把「等级制」当成成绩误导用户。
+     */
     private fun nonPercentResultText(score: JSONObject, rawScore: String): String {
-        if (isTwoLevelMode(score.optRealString("DJCJLXDM_DISPLAY"))) {
+        val mode = score.optRealString("DJCJLXDM_DISPLAY")
+        if (isTwoLevelMode(mode)) {
             return if (earnsCompletedCredit(score, rawScore)) "P" else "NP"
         }
-        val candidates = listOf(
-            "ZCJ_DISPLAY",
-            "CJ_DISPLAY",
-            "DJCJ_DISPLAY",
-            "DJCJ",
-            "DJMC",
-            "CJ",
-        )
-        val officialText = candidates.firstNotNullOfOrNull { key ->
-            score.optRealString(key).trim().takeIf { it.isNotBlank() && it.toDoubleOrNull() == null }
+        val grade = findGradeText(score)
+            ?: rawScore.trim().takeIf { isGradeText(it) }
+        if (grade == null) {
+            // 诊断日志：若仍取不到等级，logcat 里会留下整行原始字段，便于下次精确定位。
+            Log.w("XmuScoreDebug", "no grade text in non-percent row: $score")
         }
-        return officialText ?: score.optRealString("DJCJLXDM_DISPLAY").ifBlank { rawScore.ifBlank { "已通过" } }
+        return grade ?: "—"
+    }
+
+    /** 已知成绩字段按可信度排序；不同学期/接口版本字段名可能带后缀或前缀。 */
+    private val gradeFieldNames = listOf(
+        "ZCJ_DISPLAY", "CJ_DISPLAY", "DJCJ_DISPLAY", "DJCJMC", "DJMC", "CJMC",
+        "DJCJ", "CJ", "XSCJ", "KSCJ", "ZPCJ", "DJ", "ZCJ",
+    )
+
+    /** 先查已知字段，再扫描整行所有字段，返回第一个合法等级文本。 */
+    private fun findGradeText(score: JSONObject): String? {
+        gradeFieldNames.forEach { key ->
+            val value = score.optRealString(key).trim()
+            if (isGradeText(value)) return value
+        }
+        val keys = score.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            // 兜底扫描只认「成绩/等级」语义字段，避免把无关的 A/B 标记误当成等级
+            if (!key.contains("CJ", true) && !key.contains("DJ", true) &&
+                !key.contains("GRADE", true) && !key.contains("LEVEL", true) &&
+                !key.contains("SCORE", true)
+            ) continue
+            val value = score.optRealString(key).trim()
+            if (isGradeText(value)) return value
+        }
+        return null
     }
 
     private fun scoreGradeMode(score: JSONObject): String {
@@ -246,21 +286,21 @@ class XmuScoreAutoQueryClient internal constructor(
         mode == "两级制" || mode.equals("P/NP", ignoreCase = true)
 
     private fun earnsCompletedCredit(score: JSONObject, rawScore: String): Boolean {
-        val text = listOf(
-            rawScore,
-            score.optString("ZCJ_DISPLAY"),
-            score.optString("CJ_DISPLAY"),
-            score.optString("DJCJ_DISPLAY"),
-            score.optString("DJCJ"),
-            score.optString("DJMC"),
-        ).joinToString(" ")
-        if (listOf("不及格", "不合格", "不通过", "NP", "FAIL", "W", "DF", "缓考").any { it in text }) return false
+        val values = (listOf(rawScore) + gradeFieldNames.map { score.optRealString(it) })
+            .map { it.trim() }.filter { it.isNotBlank() }
+        // 等级制里 F/NP/不及格 等明确未通过，不应计入已完成学分。
+        // 单字母 F 只做精确匹配（否则 "F" 会命中任意含 F 的无关字段），
+        // 多字符失败标记才允许包含匹配（如「补考不及格」）。
+        if (values.any { value ->
+                failingGradeTexts.any { fail -> value == fail || (fail.length > 1 && fail in value) }
+            }
+        ) return false
         return rawScore.toDoubleOrNull()?.let { it >= 60.0 } ?: true
     }
 
     private fun loginAndGetToken() {
         // academic 域 CAS 登录跨模块单飞：成绩/课表/恢复共用同一把进程级门，
-        // 已在途则直接抛会话过期（上层走恢复），绝不同时打两个身份域登录（风控红线）。
+        // 已在途则直接抛会话过期（上层走恢复），绝不同时打两个身份域登录。
         if (!ProcessSessionRecovery.coordinator.tryStartAcademicCasLogin()) {
             throw MainSessionExpiredException()
         }
@@ -268,7 +308,7 @@ class XmuScoreAutoQueryClient internal constructor(
             // 登录冷却（进程级）：服务端限流（登录页异常/登录失败）后短时间内不再尝试登录，
             // 避免限流窗口内反复打 CAS 登录延长风控（2026-08-17 体检：403 循环 bug 曾导致
             // 同账号短时间 20+ 次登录被 ids 限流，登录页不再返回表单）。
-            // 时间源用 System.nanoTime()：单调时钟（用户改系统时间无法绕过冷却，
+            //时间源用 System.nanoTime：单调时钟（用户改系统时间无法绕过冷却，
             // 且 JVM 单测可用——SystemClock 在 JVM 抛 not mocked）。
             if (loginCooldownActive(lastLoginBlockedAtNanos)) {
                 throw AcademicLoginBlockedException("教务登录请求过于频繁，请约 30 分钟后重试")
@@ -280,7 +320,7 @@ class XmuScoreAutoQueryClient internal constructor(
             JwDebugLog.d("login: page code=${page.code} saltLen=${salt.length} ltLen=${extractInput(page.body, "lt").length} len=${page.body.length}")
             JwDebugLog.d("login: pageHead=${page.body.take(500).replace('\n', ' ').replace('\r', ' ')}")
             // 登录页缺少密码盐：页面不是正常登录表单（限流提示页/异常页/维护页）。
-            // 绝不继续（空盐加密会崩成误导性异常），也绝不在本窗口内重试登录（风控红线）。
+            // 绝不继续（空盐加密会崩成误导性异常），也绝不在本窗口内重试登录。
             if (salt.isBlank()) {
                 lastLoginBlockedAtNanos = System.nanoTime()
                 throw AcademicLoginBlockedException("教务登录请求过于频繁，请约 30 分钟后重试")
@@ -390,7 +430,7 @@ class XmuScoreAutoQueryClient internal constructor(
     }
 
     /** request/follow 模板收编于 JwHttpBase；终止域保持现状清单（未含 Keycloak，
-     *  成绩链路语义冻结）；异常类型与响应装饰逐字对齐原实现。 */
+     *成绩链路语义冻结）；异常类型与响应装饰逐字对齐原实现。 */
     private val base = JwHttpBase(transport = transport, jar = jar)
 
     private fun follow(
@@ -408,7 +448,7 @@ class XmuScoreAutoQueryClient internal constructor(
             maxRedirects = MAX_REDIRECTS,
             // 重定向循环耗尽：若终点仍停在统一登录域（ids/authserver），说明是会话过期反复 bounce，
             // 应触发续登（抛会话失效）；若循环发生在教务域内部，属服务端坏跳转（数据性问题），
-            // 归为格式异常，避免白打一次 CAS 登录（风控红线）。
+            // 归为格式异常，避免白打一次 CAS 登录。
             loginTerminators = JwSessionMarkers.SCORE_FOLLOW_TERMINATORS,
             onLoginTerminus = { ScoreSessionExpiredException() },
             onExhaustedNonLogin = { ScoreJsonFormatException("教务跳转次数过多") },
@@ -434,7 +474,8 @@ class XmuScoreAutoQueryClient internal constructor(
     private fun rowsFromDataBlock(text: String, blockName: String): List<JSONObject> {
         val root = runCatching {
             JSONTokener(text.trim().removePrefix("\uFEFF")).nextValue() as? JSONObject
-        }.getOrElse {
+        }.getOrElse { error ->
+            Diagnostics.record("成绩", error, "成绩接口 JSON 解析（${text.length} 字符）")
             throw ScoreJsonFormatException("成绩接口返回格式异常")
         } ?: return emptyList()
         val rows = root.optJSONObject("datas")
@@ -471,6 +512,29 @@ class XmuScoreAutoQueryClient internal constructor(
     )
 
     companion object {
+        // 等级制成绩文本识别（合并进唯一的 companion object；Kotlin 不允许两个 companion）。
+        /** 成绩模式名：这些是「计分方式」，不是成绩本身。 */
+        private val gradeModeNames = setOf("百分制", "等级制", "五级制", "两级制", "非百分制", "P/NP")
+
+        /** 中文等级文本（精确匹配，避免课程名/模式名被误判）。 */
+        private val chineseGradeTexts = setOf(
+            "优秀", "良好", "中等", "及格", "不及格", "合格", "不合格",
+            "通过", "不通过", "优", "良", "中", "差", "免修", "缓考",
+        )
+
+        /** 字母等级：A/B/C 可带 +/-，D/E/F 只有单字母（厦大等级制没有 D+、D-、F+、F-），
+         *另含 P/NP/W/I/EX/S/U 等常见标记。排除不存在的组合可避免整行扫描时
+         *把无关的 "D+" 之类字段误判成成绩。 */
+        private val gradeTextPattern = Regex("""(?:[A-Ca-c][+-]?|[D-Fd-f]|P|NP|W|I|EX|S|U)""")
+
+        /** 明确未通过的等级，用于已完成学分判定。 */
+        private val failingGradeTexts = setOf("F", "NP", "不及格", "不合格", "不通过", "FAIL", "W", "DF", "缓考")
+
+        private fun isGradeText(value: String): Boolean {
+            if (value.isBlank() || value in gradeModeNames) return false
+            return gradeTextPattern.matches(value) || value in chineseGradeTexts
+        }
+
         private const val MAX_REDIRECTS = 16
         private const val SCORE_REFERER = "https://jw.xmu.edu.cn/new/index.html"
         // 成绩按学期并行拉取的最大并发数。真实场景 6-8 个学期，
@@ -480,7 +544,7 @@ class XmuScoreAutoQueryClient internal constructor(
         private const val SCHEDULE_APP_ID = "4979568947762216"
 
         /** 登录被服务端拒绝/限流后的进程级冷却：窗口内不再尝试 CAS 登录（防反复打登录延长风控）。
-         *  时间源 System.nanoTime()：单调时钟，JVM 单测可用，用户改系统时间无法绕过。 */
+         *时间源 System.nanoTime：单调时钟，JVM 单测可用，用户改系统时间无法绕过。 */
         @Volatile
         private var lastLoginBlockedAtNanos: Long? = null
 
@@ -535,7 +599,7 @@ internal class ScoreSessionExpiredException : IllegalStateException("成绩接�
 /**
  * 成绩接口返回了无法解析的数据（HTML 错误页、JSON 缺字段、非法 UTF 等）。
  * 与"会话失效"严格区分：格式异常属于服务端数据问题，**绝不触发 CAS 重登**
- * （重登也无法修复数据问题，只会白白增加登录次数，触碰风控红线）。
+ *。
  */
 internal class ScoreJsonFormatException(message: String? = null) : IllegalStateException(message)
 

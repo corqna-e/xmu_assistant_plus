@@ -1,0 +1,13 @@
+<!-- 向上箭头（教程页悬浮跳模块键）：与其它图标一致的描边风格；
+     Icon 的 tint 会覆盖颜色。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M12,19 L12,6"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" android:strokeColor="#083B6F" />
+    <path android:pathData="M6.5,11.5 L12,6 L17.5,11.5"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" android:strokeColor="#083B6F" />
+</vector>

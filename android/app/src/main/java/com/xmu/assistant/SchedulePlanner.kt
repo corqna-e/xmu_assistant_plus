@@ -17,8 +17,8 @@ data class ParsedWeekExpression(
 )
 
 /** 教学周上界（覆盖 19 周长学期；与 XmuScheduleClient 当前周次/手动周次同口径）。
- *  解析器按此钳制范围端点：畸形超大范围（如 1-2147483647周）全量展开会
- *  在周次切换/Widget/ICS 导出的调用线程上 OOM/卡死。 */
+ *解析器按此钳制范围端点：畸形超大范围（如 1-2147483647周）全量展开会
+ *在周次切换/Widget/ICS 导出的调用线程上 OOM/卡死。 */
 internal const val MAX_XMU_WEEK = 25
 
 fun parseXmuWeekExpression(value: String): ParsedWeekExpression {
@@ -202,7 +202,7 @@ fun xmuAcademicCalendarForTerm(termCode: String): XmuAcademicCalendar? =
  * @param currentWeek 系统返回的当前周次（1..19）
  * @param today 当天日期
  * @param totalWeeks 学期总周数（未知时默认 19：虾大秋季多为 18/19 周，
- *                   取 19 可避免 19 周长学期的第 19 周课程被钳制丢失）
+ *取 19 可避免 19 周长学期的第 19 周课程被钳制丢失）
  */
 fun xmuCalendarInferredFromCurrentWeek(
     termCode: String,
@@ -238,11 +238,11 @@ fun xmuCalendarInferredFromCurrentWeek(
  *
  * 校验规则：
  * 1. 反推的开学日必须不晚于今天，且距今不超过窗口天数。窗口取
- *    [maxStartAgeDays] 与「当前周次 × 7 + 7」的较大者：学期早期沿用
- *    固定上限（防寒暑假误推），学期中后段（第 9 周以后）仍能反推，
- *    保证表外学期整学期都能自动校准开学日；
+ *[maxStartAgeDays] 与「当前周次 × 7 + 7」的较大者：学期早期沿用
+ *固定上限（防寒暑假误推），学期中后段（第 9 周以后）仍能反推，
+ *保证表外学期整学期都能自动校准开学日；
  * 2. 开学日必须落在合理的开学时间窗内（秋季 9/1-10/15，夏季 6/1-7/31，
- *    春季 1/15-4/30），防止寒暑假期间手动设置周次把开学日反推到假期里。
+ *春季 1/15-4/30），防止寒暑假期间手动设置周次把开学日反推到假期里。
  * 校验通过才返回日历，否则返回 null（等待下一次刷新校准）。
  */
 fun xmuTryInferCalendar(
@@ -260,7 +260,7 @@ fun xmuTryInferCalendar(
     if (daysSinceStart !in 0L..windowDays) return null
     // 开学时间窗按学期类型区分：
     // - 秋季（...1）：9/1-10/15（虾大秋季开学均为 9 月初：9/1、9/2、9/7、9/11；
-    //   暑假 currentZc 返回 1 时若窗口含 8 月会把 8 月误认为开学，必须排除）；
+    //暑假 currentZc 返回 1 时若窗口含 8 月会把 8 月误认为开学，必须排除）；
     // - 夏季短学期（...3）：6/1-7/31（虾大短学期 6 月底-7 月底，8 月已在暑假）；
     // - 春季（...2）：1/15-4/30。
     val month = inferred.startDate.monthValue

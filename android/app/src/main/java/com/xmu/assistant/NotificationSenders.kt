@@ -61,19 +61,21 @@ class QQMailSender internal constructor(
     private val password: String,
     private val recipient: String,
     private val ports: String,
+    private val host: String = "",
     private val connectionFactory: SmtpConnectionFactory,
 ) {
-    constructor(sender: String, password: String, recipient: String, ports: String = "465,587") :
-        this(sender, password, recipient, ports, JavaMailSmtpConnectionFactory)
+    constructor(sender: String, password: String, recipient: String, ports: String = "465,587", host: String = "") :
+        this(sender, password, recipient, ports, host, JavaMailSmtpConnectionFactory)
 
     fun send(title: String, body: String) {
         require(sender.isNotBlank() && password.isNotBlank() && recipient.isNotBlank()) {
-            "QQ mail settings are incomplete"
+            "Mail settings are incomplete"
         }
+        val smtpHost = inferSmtpHost(sender, host)
         val errors = mutableListOf<String>()
         for (port in parseSmtpPorts(ports)) {
             try {
-                sendWithPort(port, title, body)
+                sendWithPort(smtpHost, port, title, body)
                 return
             } catch (error: SmtpSubmissionUncertainException) {
                 // DATA may already have been accepted. A fallback port would duplicate the mail.
@@ -85,8 +87,8 @@ class QQMailSender internal constructor(
         error(errors.joinToString("；"))
     }
 
-    private fun sendWithPort(port: Int, title: String, body: String) {
-        val props = smtpProperties(port)
+    private fun sendWithPort(smtpHost: String, port: Int, title: String, body: String) {
+        val props = smtpProperties(smtpHost, port)
         val session = Session.getInstance(props, object : javax.mail.Authenticator() {
             override fun getPasswordAuthentication(): PasswordAuthentication {
                 return PasswordAuthentication(sender, password)
@@ -147,10 +149,28 @@ internal object JavaMailSmtpConnectionFactory : SmtpConnectionFactory {
 
 internal class SmtpSubmissionUncertainException(message: String, cause: Throwable) : IllegalStateException(message, cause)
 
-fun smtpProperties(port: Int): Properties = Properties().apply {
+/** 任意邮箱支持：自定义主机优先；否则按发件邮箱域名推断，未知域名按 smtp.<域名> 兜底。 */
+internal fun inferSmtpHost(sender: String, configured: String): String {
+    val custom = configured.trim()
+    if (custom.isNotBlank()) return custom
+    val domain = sender.substringAfter('@', "").trim().lowercase()
+    if (domain.isBlank()) return "smtp.qq.com"
+    return when {
+        domain.endsWith("qq.com") || domain.endsWith("foxmail.com") -> "smtp.qq.com"
+        domain.endsWith("163.com") -> "smtp.163.com"
+        domain.endsWith("126.com") -> "smtp.126.com"
+        domain.endsWith("yeah.net") -> "smtp.yeah.net"
+        domain.endsWith("sina.com") -> "smtp.sina.com"
+        domain.endsWith("gmail.com") -> "smtp.gmail.com"
+        domain.endsWith("outlook.com") || domain.endsWith("hotmail.com") || domain.endsWith("live.com") -> "smtp-mail.outlook.com"
+        else -> "smtp.$domain"
+    }
+}
+
+fun smtpProperties(smtpHost: String = "smtp.qq.com", port: Int): Properties = Properties().apply {
     put("mail.smtp.auth", "true")
     put("mail.mime.charset", "UTF-8")
-    put("mail.smtp.host", "smtp.qq.com")
+    put("mail.smtp.host", smtpHost)
     put("mail.smtp.port", port.toString())
     put("mail.smtp.connectiontimeout", SMTP_TIMEOUT_MILLIS.toString())
     put("mail.smtp.timeout", SMTP_TIMEOUT_MILLIS.toString())

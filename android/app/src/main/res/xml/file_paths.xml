@@ -5,4 +5,7 @@
 <paths>
     <files-path name="shared_images" path="images/" />
     <cache-path name="exports" path="exports/" />
+    <!--课件下载目录（getExternalFilesDir/Download）供「打开下载目录」授权使用，
+         只暴露这一个子目录，不扩大到外部存储根。 -->
+    <external-files-path name="downloads" path="Download/" />
 </paths>

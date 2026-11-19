@@ -15,22 +15,22 @@ import kotlinx.coroutines.withContext
  *
  * 设计约定（与拆分前行为逐字对齐）：
  * - 状态字段全部 Compose 可观察（mutableStateOf），仅 UI 线程写入；
- *   后台线程只读发起时的快照值（避免跨线程读写 MutableState）。
+ *后台线程只读发起时的快照值（避免跨线程读写 MutableState）。
  * - 转屏/进程重建恢复：selectedTerm 与 manuallySelected 由组合侧
- *   rememberSaveable + Saver 保存/恢复（见 MainActivity 中的声明）；
- *   summary/validTerms 等其余状态由 init 协程从磁盘缓存异步回填
- *   （IO 线程读盘 → 主线程写入，构造期不再做主线程磁盘 IO）。
+ *rememberSaveable + Saver 保存/恢复（见 MainActivity 中的声明）；
+ *summary/validTerms 等其余状态由 init 协程从磁盘缓存异步回填
+ *（IO 线程读盘 → 主线程写入，构造期不再做主线程磁盘 IO）。
  * - 会话保护：网络回调先经 sessionEpoch.accepts(...) 校验世代再写状态，
- *   与其它模块共用同一进程级 epoch；续登写回教务 cookie（setScoreCookieHeader）
- *   前同样校验 isCurrent（防登出/换号后旧账号 cookie 写回）。
+ *与其它模块共用同一进程级 epoch；续登写回教务 cookie（setScoreCookieHeader）
+ *前同样校验 isCurrent（防登出/换号后旧账号 cookie 写回）。
  * - 存储依赖收窄为函数式注入（scoreCookieHeader/setScoreCookieHeader/reminderSettings）：
- *   组合侧绑定 AssistantSettings（加密 prefs），测试注入 fake，互不依赖。
+ *组合侧绑定 AssistantSettings（加密 prefs），测试注入 fake，互不依赖。
  * - 风控红线：考试内部可能触发教务 CAS 续登（XmuExamClient.fetchTermExams 统一续登，
- *   进程级单飞门），与 TronClass 手动登录并发会打两个身份域——refresh/checkChanges 等
- *   入口检查 accountTransitionInProgress；请求统一走 "exam" 互斥门，
- *   提醒重排走 "exam-reminder" 门。
+ *进程级单飞门），与 TronClass 手动登录并发会打两个身份域——refresh/checkChanges 等
+ *入口检查 accountTransitionInProgress；请求统一走 "exam" 互斥门，
+ *提醒重排走 "exam-reminder" 门。
  * - 网络/IO 用注入的 scope（组合侧 rememberCoroutineScope，随 Activity 销毁取消），
- *   不再使用裸 thread{}（防"页面已关还弹 Toast / 写已销毁状态"）。
+ *不再使用裸 thread{}（防"页面已关还弹 Toast / 写已销毁状态"）。
  */
 internal class ExamSectionState(
     private val activity: ComponentActivity,
@@ -63,7 +63,7 @@ internal class ExamSectionState(
     var selectedTerm by mutableStateOf(selectedTermInitial.orEmpty())
         private set
 
-    /** 用户是否手动切换过学期：未手动选过时默认始终校正到最近学期。 */
+    /**未手动选过时默认始终校正到最近学期。 */
     var manuallySelected by mutableStateOf(manuallySelectedInitial)
         private set
 
@@ -85,12 +85,20 @@ internal class ExamSectionState(
     var autoUpdated by mutableStateOf(false)
         private set
 
+    /**
+     *用户自定义的考试安排（手动输入，不来自教务抓取）。
+     * 与抓取项分开存放、分开展示；同样会被并入课表。
+     * 属于用户自己的笔记，登出/换号不清（clearAll 只清教务侧缓存与提醒）。
+     */
+    var customExams by mutableStateOf(emptyList<CustomExam>())
+        private set
+
     // 状态世代（仅主线程读写）：clearAll 递增，磁盘缓存回填携带起始世代，
     // 晚于登出清理落地的回填直接丢弃（防登出后旧缓存回灌界面）。
     private var stateGeneration = 0
 
     init {
-        // 构造期不再做主线程磁盘 IO（体检 P2）：此前 loadTerms + loadTerm 在组合期间
+        // 构造期不再做主线程磁盘 IO：此前 loadTerms + loadTerm 在组合期间
         // 同步读 prefs；现改为 IO 线程读缓存、主线程回填（RollcallSectionState
         // 「缓存先行」范式）。回填仅在字段仍为初始值时写入，避免晚到的缓存
         // 覆盖静默刷新已带回的新数据或用户已切换的选择。
@@ -99,13 +107,40 @@ internal class ExamSectionState(
             val restoredTerms = ExamCache.loadTerms(activity)
             val restoredTerm = selectedTermInitial ?: restoredTerms.firstOrNull().orEmpty()
             val restoredSummary = ExamCache.loadTerm(activity, restoredTerm)
+            val restoredCustom = CustomExamStore.load(activity)
             withContext(Dispatchers.Main) {
                 if (stateGeneration != generationAtStart) return@withContext
                 if (validTerms.isEmpty()) validTerms = restoredTerms
                 if (selectedTerm.isBlank()) selectedTerm = restoredTerm
                 if (summary == null && selectedTerm == restoredTerm) summary = restoredSummary
+                if (customExams.isEmpty()) customExams = restoredCustom
             }
         }
+    }
+
+    /**新增或更新一条自定义考试（同 id 视为更新）。 */
+    fun saveCustomExam(exam: CustomExam) {
+        val index = customExams.indexOfFirst { it.id == exam.id }
+        val next = if (index >= 0) {
+            customExams.toMutableList().also { it[index] = exam }
+        } else {
+            customExams + exam
+        }
+        customExams = next
+        persistCustomExams(next)
+    }
+
+    /**删除一条自定义考试。 */
+    fun deleteCustomExam(id: String) {
+        val next = customExams.filterNot { it.id == id }
+        if (next.size == customExams.size) return
+        customExams = next
+        persistCustomExams(next)
+    }
+
+    /** 落盘放在 IO 线程，避免主线程写文件。 */
+    private fun persistCustomExams(exams: List<CustomExam>) {
+        scope.launch(cacheDispatcher) { CustomExamStore.save(activity, exams) }
     }
 
     /** 学期条点击：立即复用缓存结果，后台悄悄检查变化；无缓存且已登录才拉取。 */
@@ -134,7 +169,7 @@ internal class ExamSectionState(
 
     /** 获取教务域会话 cookie（与课表/成绩同域，直接复用 settings 存储）。
      *
-     * 注意：**不再调用 ensureScheduleSession**。实测（2026-08-17 体检）：
+     *注意：**不再调用 ensureScheduleSession**。实测：
      * ensureScheduleSession 会打开课表应用（appShow wdkbapp），而 jwapp 是
      * 单应用会话模型——课表应用会话占用后，考试应用（studentWdksapApp）的
      * 业务请求一律被 Tomcat 拒绝（403），每次操作都逼出一次完整 CAS 续登
@@ -146,7 +181,7 @@ internal class ExamSectionState(
      * 不再循环）。
      */
     fun ensureAcademicSession(): String {
-        // 后台执行时复查登录在途：考试续登与 TronClass 登录并发会打两个身份域（风控红线）
+        // 后台执行时复查登录在途：考试续登与 TronClass 登录并发会打两个身份域
         if (accountTransitionInProgress()) throw ExamLoginInProgressException()
         return scoreCookieHeader()
     }
@@ -163,7 +198,7 @@ internal class ExamSectionState(
     ) { sessionEpoch.isCurrent(session) }
 
     /** 按当前设置重排考试提醒闹钟（幂等：先取消旧计划再排新计划）。
-     *  聚合所有已缓存学期的考试（跨学期提醒不丢）；执行挪到后台线程，不阻塞主线程。 */
+     *聚合所有已缓存学期的考试（跨学期提醒不丢）；执行挪到后台线程，不阻塞主线程。 */
     fun rescheduleReminders() {
         if (!requestGate.tryStart("exam-reminder")) return
         val reminderSettings = reminderSettings()
@@ -199,7 +234,7 @@ internal class ExamSectionState(
                     if (fetched != null) {
                         // 无条件落缓存（任何学期数据都可供切学期/提醒聚合复用）
                         ExamCache.saveTerm(activity, fetched)
-                        // 仅当仍为当前选中学期才更新显示（防止在途请求覆盖用户新切的学期）
+                        // 仅当仍为当前选中学期才更新显示
                         if (term == selectedTerm) {
                             summary = fetched
                             autoUpdated = false
@@ -227,7 +262,7 @@ internal class ExamSectionState(
 
     fun refresh() {
         // 登录/恢复在途时禁止并发刷新：考试内部可能触发 academic CAS 续登（XmuExamClient 统一续登），
-        // 与 TronClass 手动登录并发会打两个身份域（风控红线，与课表刷新同一保护）。
+        // 与 TronClass 手动登录并发会打两个身份域。
         if (accountTransitionInProgress()) {
             show("登录处理中，请稍候")
             return
@@ -315,7 +350,7 @@ internal class ExamSectionState(
     fun checkChanges(term: String) {
         if (!loggedIn() || cookieHeader().isBlank()) return
         // 登录/恢复在途时跳过：考试检查可能触发 academic CAS 续登（XmuExamClient 统一续登），
-        // 与 TronClass 手动登录并发会打两个身份域（风控红线，与课表刷新同一保护）。
+        // 与 TronClass 手动登录并发会打两个身份域。
         if (accountTransitionInProgress()) return
         val cached = summary?.takeIf { it.termCode == term } ?: return
         // 与手动刷新/静默刷新共用同一互斥 key：任一考试请求在途时静默跳过（避免并发请求与乱序写回）
@@ -334,7 +369,7 @@ internal class ExamSectionState(
                 }
                 withContext(Dispatchers.Main) {
                     if (!sessionEpoch.accepts(session, cookieHeader(), loggedIn())) return@withContext
-                    // 用户已切走：结果仅落缓存，不改显示
+                    // 结果仅落缓存，不改显示
                     if (term != selectedTerm) {
                         outcome.getOrNull()?.let { ExamCache.saveTerm(activity, it) }
                         return@withContext
@@ -380,9 +415,9 @@ internal class ExamSectionState(
     }
 
     /**
-     * 进入考试页的默认路径（悄悄检查，与用户要求一致）：
+     *进入考试页的默认路径：
      * - 立即复用缓存结果（多学期缓存 + 学期列表缓存），不显示"正在刷新"表达；
-     *   仅无任何缓存可复用时（首次）显示加载指示
+     *仅无任何缓存可复用时（首次）显示加载指示
      * - 后台静默拉取：当前学期数据每次进入都检查；学期列表按节流间隔（6 小时）重探
      * - 检测到变化（学期列表/考试数据）才更新，并提示「检测到变化，自动更新」
      * - 默认选中最近一个学期；用户已手动选择且仍有效则保留
@@ -450,7 +485,7 @@ internal class ExamSectionState(
                                 summary = ExamCache.loadTerm(activity, desired)
                                 autoUpdated = false
                             }
-                            // 用户已切走：结果仅落缓存（后台已存），不改显示与横幅
+                            // 结果仅落缓存（后台已存），不改显示与横幅
                             if (target == null || target != selectedTerm) {
                                 return@onSuccess
                             }
@@ -492,7 +527,7 @@ internal class ExamSectionState(
                         }
                     } finally {
                         // 与全仓其余骨架齐一（A2 统一）：loading 在世代守卫内释放。登出/换号
-                        // 竞态下不在此复位——由 invalidateMainSessionUi → clearLoadingState() 兜底。
+                        //竞态下不在此复位——由 invalidateMainSessionUi → clearLoadingState 兜底。
                         if (sessionEpoch.accepts(session, cookieHeader(), loggedIn())) {
                             loading = false
                         }
@@ -508,14 +543,14 @@ internal class ExamSectionState(
     }
 
     /** 会话失效时仅复位加载中标志（保留已展示数据，供 invalidateMainSessionUi 使用）。
-     *  缺失会导致：刷新在途时会话失效，fetchData/silentRefresh 回调被 sessionEpoch 守卫
-     *  丢弃，finally 的守卫复位同样被跳过，loading 永真、刷新按钮永久转圈。 */
+     *缺失会导致：刷新在途时会话失效，fetchData/silentRefresh 回调被 sessionEpoch 守卫
+     *丢弃，finally 的守卫复位同样被跳过，loading 永真、刷新按钮永久转圈。 */
     fun clearLoadingState() {
         loading = false
     }
 
     /** 登出/换号清理：清状态 + 磁盘缓存 + 作废提醒计划，与 clearLoggedOutUi 语义对齐。
-     *  考试数据不含个人信息，但跟随账号会话，换号时也必须清（防串号串提醒）。 */
+     *考试数据不含个人信息，但跟随账号会话，换号时也必须清（防串号串提醒）。 */
     fun clearAll() {
         stateGeneration++
         summary = null

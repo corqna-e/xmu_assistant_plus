@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 课表取数注入点（ScheduleSectionState 的测试 seam）：默认实现见下方
- *  fetchScheduleWithNetworkRetry，生产装配方不传，行为逐字不变。 */
+ *fetchScheduleWithNetworkRetry，生产装配方不传，行为逐字不变。 */
 internal fun interface ScheduleFetcher {
     suspend fun fetch(
         username: String,
@@ -28,14 +28,14 @@ internal fun interface ScheduleFetcher {
  *
  * 设计约定（与拆分前行为逐字对齐）：
  * - 状态字段全部 Compose 可观察（mutableStateOf），仅 UI 线程写入；
- *   后台线程只读发起时的快照值（避免跨线程读写 MutableState）。
+ *后台线程只读发起时的快照值（避免跨线程读写 MutableState）。
  * - 会话保护：网络回调先经 sessionEpoch.accepts(...) 校验世代再写状态；
- *   会话过期时经 setPendingSessionRetry 挂起一次性安全续登（recoverExpiredModule 处理）。
+ *会话过期时经 setPendingSessionRetry 挂起一次性安全续登（recoverExpiredModule 处理）。
  * - 课表走教务 CAS 身份域：恢复路径（alreadyRetriedAfterRecovery）由组合侧传入
- *   accountTransitionInProgress/busy 读写器统一复位 transition（与拆分前一致）。
+ *accountTransitionInProgress/busy 读写器统一复位 transition（与拆分前一致）。
  * - 请求统一走 "schedule" 互斥门（RequestGate）。
  * - 网络/IO 用注入的 scope（组合侧 rememberCoroutineScope，随 Activity 销毁取消），
- *   不再使用裸 thread{}（防"页面已关还弹 Toast / 写已销毁状态"）。
+ *不再使用裸 thread{}（防"页面已关还弹 Toast / 写已销毁状态"）。
  */
 internal class ScheduleSectionState(
     private val activity: Activity,
@@ -62,11 +62,11 @@ internal class ScheduleSectionState(
     private val setPendingSessionRetry: (ModuleReadRetry) -> Unit,
     private val clearToast: () -> Unit,
     /** 网络取数注入点（测试 seam，照 CoursewareSectionState.createCoursewareClient 范式）：
-     *  默认值即正式实现 fetchScheduleWithNetworkRetry，生产装配方不传该参数，
-     *  行为与加参数前逐字一致；测试借它注入会话过期/成功两种取数结果。
-     *  用 fun interface 而非函数类型：Kotlin 函数类型调用不支持具名实参，
-     *  而 mayRelogin = { sessionEpoch.isCurrent(session) } 这行是契约测试锚定的
-     *  源码文本（自动续登必须挂在当前世代上），必须原样保留。 */
+     *默认值即正式实现 fetchScheduleWithNetworkRetry，生产装配方不传该参数，
+     *行为与加参数前逐字一致；测试借它注入会话过期/成功两种取数结果。
+     *用 fun interface 而非函数类型：Kotlin 函数类型调用不支持具名实参，
+     *而 mayRelogin = { sessionEpoch.isCurrent(session) } 这行是契约测试锚定的
+     *源码文本（自动续登必须挂在当前世代上），必须原样保留。 */
     private val fetchSchedule: ScheduleFetcher = ScheduleFetcher { u, p, c, m ->
         fetchScheduleWithNetworkRetry(u, p, c, m)
     },
@@ -98,7 +98,7 @@ internal class ScheduleSectionState(
         private set
 
     /** 强制刷新课表。登录/恢复在途时禁止并发刷新：课表刷新内部可能触发 academic CAS
-     *  续登（ensureScheduleSession），与 TronClass 手动登录并发会打两个身份域（风控红线）。 */
+     *续登（ensureScheduleSession），与 TronClass 手动登录并发会打两个身份域。 */
     fun refresh(alreadyRetriedAfterRecovery: Boolean = false): Boolean {
         if (accountTransitionInProgress() && !alreadyRetriedAfterRecovery) {
             show("登录处理中，请稍候")
@@ -219,8 +219,8 @@ internal class ScheduleSectionState(
     }
 
     /** 启动/转屏时异步加载磁盘缓存并应用（文件 + 旧版加密 prefs 迁移，避免启动首帧主线程磁盘 IO）。
-     *  守卫：仅当仍登录且当前仍是空快照才应用（isEligible），防止登出后旧账号缓存复现、
-     *  也防止覆盖启动期间的网络刷新数据。 */
+     *守卫：仅当仍登录且当前仍是空快照才应用（isEligible），防止登出后旧账号缓存复现、
+     *也防止覆盖启动期间的网络刷新数据。 */
     fun loadCachedSnapshotOnStartup(
         activity: Activity,
         settings: AssistantSettings,
@@ -292,10 +292,10 @@ internal class ScheduleSectionState(
     }
 
     /** 落盘挪到后台线程：策略页每次校准/清除都在 UI 线程写整个学期 JSON 会卡顿
-     *  （刷新路径已约定「避免主线程磁盘 IO」，此处对齐）。
-     *  与 refresh 的落盘同款世代校验：手动校准也可能在登出/换号前一刻发起，
-     *  晚到的写会把 deleteScheduleSnapshotFile 刚删掉的缓存文件重建出来，
-     *  下次冷启动即被新账号读走（串号展示）。 */
+     *（刷新路径已约定「避免主线程磁盘 IO」，此处对齐）。
+     *与 refresh 的落盘同款世代校验：手动校准也可能在登出/换号前一刻发起，
+     *晚到的写会把 deleteScheduleSnapshotFile 刚删掉的缓存文件重建出来，
+     *下次冷启动即被新账号读走（串号展示）。 */
     private fun persistSnapshotAsync(
         snapshot: XmuScheduleSnapshot,
         request: SessionRequest? = null,
@@ -341,8 +341,8 @@ internal class ScheduleSectionState(
         internal fun sharedPersistenceGate(): LatestSnapshotWriteGate = persistenceGate
 
         /** 进程级课表快照缓存：转屏（Activity 重建）时复用内存数据，避免先清空再异步重载
-         *  的回退；登出/换号时清空（跟随账号会话）。原顶层 @Volatile var 收进 companion，
-         *  三方读写点统一经唯一访问器（B5，行为零变化）。 */
+         *的回退；登出/换号时清空（跟随账号会话）。原顶层 @Volatile var 收进 companion，
+         *三方读写点统一经唯一访问器（B5，行为零变化）。 */
         @Volatile
         private var processScheduleSnapshot: XmuScheduleSnapshot? = null
 
@@ -363,7 +363,7 @@ internal suspend fun fetchScheduleWithNetworkRetry(
     var lastFailure: Throwable? = null
     // 首次循环先建立会话（可能续登拿到新 cookie），成功后缓存 jwCookie：
     // - 后续重试直接复用已建立的会话，不再重复 ensureScheduleSession
-    //   （网络抖动重试时省掉额外的会话初始化请求）；
+    //（网络抖动重试时省掉额外的会话初始化请求）；
     // - 同时避免「会话过期 + 网络抖动」组合下一次手动刷新触发多次 CAS 登录。
     var jwCookie: String? = null
     repeat(3) { attempt ->

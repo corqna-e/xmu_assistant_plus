@@ -6,12 +6,12 @@
     <shortcut
         android:shortcutId="rollcall_status"
         android:enabled="true"
-        android:icon="@drawable/ic_notification"
+        android:icon="@drawable/ic_shortcut"
         android:shortcutShortLabel="@string/shortcut_rollcall_short"
         android:shortcutLongLabel="@string/shortcut_rollcall_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.xmu.assistant"
+            android:targetPackage="com.xmu.assistant.xia"
             android:targetClass="com.xmu.assistant.MainActivity">
             <extra android:name="open_page" android:value="签到情况" />
         </intent>
@@ -19,12 +19,12 @@
     <shortcut
         android:shortcutId="schedule"
         android:enabled="true"
-        android:icon="@drawable/ic_notification"
+        android:icon="@drawable/ic_shortcut"
         android:shortcutShortLabel="@string/shortcut_schedule_short"
         android:shortcutLongLabel="@string/shortcut_schedule_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.xmu.assistant"
+            android:targetPackage="com.xmu.assistant.xia"
             android:targetClass="com.xmu.assistant.MainActivity">
             <extra android:name="open_page" android:value="课表" />
         </intent>
@@ -32,12 +32,12 @@
     <shortcut
         android:shortcutId="scores"
         android:enabled="true"
-        android:icon="@drawable/ic_notification"
+        android:icon="@drawable/ic_shortcut"
         android:shortcutShortLabel="@string/shortcut_score_short"
         android:shortcutLongLabel="@string/shortcut_score_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.xmu.assistant"
+            android:targetPackage="com.xmu.assistant.xia"
             android:targetClass="com.xmu.assistant.MainActivity">
             <extra android:name="open_page" android:value="成绩" />
         </intent>

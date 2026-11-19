@@ -12,9 +12,9 @@ import java.nio.file.StandardCopyOption
 /**
  * 课表缓存格式版本。
  * - 2：接口不再传 ZC 参数（服务端会按周过滤导致互补周次段的课程丢失），
- *      旧版缓存（1）里的记录可能缺周一/周二等课程，旧缓存一律按空处理。
+ *旧版缓存（1）里的记录可能缺周一/周二等课程，旧缓存一律按空处理。
  * - 3：新增 inferredCalendars（按学期缓存的反推日历），旧缓存读不出该字段
- *      不影响课程数据，仍可正常使用，因此不强制失效。
+ *不影响课程数据，仍可正常使用，因此不强制失效。
  */
 const val SCHEDULE_CACHE_VERSION = 3
 
@@ -104,7 +104,7 @@ fun loadScheduleSnapshotFromFile(file: File): XmuScheduleSnapshot {
 }
 
 /** 课表缓存写入锁：persist 后台线程与策略页手动校准（主线程）共用同一 `.tmp` 文件，
- *  不加锁会字节交错导致 torn-write，rename 后永久损坏正式缓存。 */
+ *不加锁会字节交错导致 torn-write，rename 后永久损坏正式缓存。 */
 private val scheduleCacheWriteLock = Any()
 
 /** 原子写入课表缓存到指定文件（纯函数，便于单元测试）。 */
@@ -160,8 +160,8 @@ internal fun writeScheduleSnapshotAtomically(
 }
 
 /** 删除课表缓存文件（退出登录时调用，避免明文排课信息残留）。
- *  与写入共用同一把锁：退出登录的删除与 persist 后台线程/策略页校准并发时，
- *  避免删除与 `.tmp` 写入交错产生 torn 残留或误重建。 */
+ *与写入共用同一把锁：退出登录的删除与 persist 后台线程/策略页校准并发时，
+ *避免删除与 `.tmp` 写入交错产生 torn 残留或误重建。 */
 fun deleteScheduleSnapshotFile(context: Context) {
     synchronized(scheduleCacheWriteLock) {
         runCatching {

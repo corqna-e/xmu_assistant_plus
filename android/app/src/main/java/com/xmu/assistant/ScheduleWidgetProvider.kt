@@ -19,6 +19,9 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
         updateWidgets(context, manager, intArrayOf(id))
     }
 
+    // 「今日课程」组件不再有「点击查看明细」——课程行、明日课程行与空白处都不挂
+    // 任何点击意图，因此本组件不再需要处理广播（原来只用于展开 / 收起详情覆盖层，
+    // 以及详情卡里的「打开课表」中转）。onReceive 一并删除，组件内不存在任何响应手势的区域。
     companion object {
         fun refreshAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
@@ -27,13 +30,28 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
         }
 
         private fun updateWidgets(context: Context, manager: AppWidgetManager, ids: IntArray) {
-            val snapshot = ScheduleWidgetData.load(context)
-            val enabled = AssistantSettings.readWidgetEnabledMirror(context)
+            val today = java.time.LocalDate.now()
+            val snapshot = ScheduleWidgetData.load(context, today)
+            // 今日课程结束后要改显示明日课程，这里把明天的摘要一并取出。
+            val tomorrow = ScheduleWidgetData.loadDay(context, today.plusDays(1).toEpochDay())
+            // 总开关已删除，桌面小卡片恒可用（历史镜像里残留的 false 不再生效）。
+            val enabled = true
             // Load the summary once, then reuse RemoteViews for widgets with the same dimensions.
-            val viewsBySize = mutableMapOf<Pair<Int, Int>, android.widget.RemoteViews>()
+            val viewsBySize = mutableMapOf<Pair<Int, Int>, RemoteViews>()
+            // 不再有组件内详情覆盖层，渲染时不传 detail。
             fun render(width: Int, height: Int): RemoteViews = viewsBySize.getOrPut(width to height) {
-                runCatching { buildScheduleWidgetViews(context, snapshot, enabled, height, widthDp = width) }
-                    .getOrElse { buildScheduleWidgetViews(context, null, enabled, height, widthDp = width) }
+                runCatching {
+                    buildScheduleWidgetViews(
+                        context, snapshot, enabled, height,
+                        widthDp = width, tomorrow = tomorrow,
+                    )
+                }
+                    .getOrElse {
+                        buildScheduleWidgetViews(
+                            context, null, enabled, height,
+                            widthDp = width,
+                        )
+                    }
             }
             ids.forEach { id ->
                 val options = manager.getAppWidgetOptions(id)
@@ -41,7 +59,7 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                 val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 250).coerceAtLeast(1)
                 @Suppress("DEPRECATION")
                 val sizes = if (Build.VERSION.SDK_INT >= 31) options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES) else null
-                val validSizes = sizes.orEmpty().filter { it.width > 0 && it.height > 0 }.distinct().take(16)
+                val validSizes = sizes.orEmpty().filter { it.width > 0 && it.height > 0 }.distinct().take(8)
                 val views = if (Build.VERSION.SDK_INT >= 31 && validSizes.isNotEmpty()) {
                     RemoteViews(validSizes.associateWith { render(it.width.toInt().coerceAtLeast(1), it.height.toInt().coerceAtLeast(1)) })
                 } else {

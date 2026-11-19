@@ -96,7 +96,7 @@ class SessionEpoch {
 
     /**
      * 请求发起时的快照是否仍是当前世代（仅按 epoch 世代判断，不读取 UI 状态）。
-     * 用户登出 / 重新登录 / 新活动接管都会推进世代，因此世代不变即说明
+     *因此世代不变即说明
      * 请求发起后没有发生任何会话切换，允许继续自动续登。
      */
     fun isCurrent(request: SessionRequest): Boolean = synchronized(lock) {
