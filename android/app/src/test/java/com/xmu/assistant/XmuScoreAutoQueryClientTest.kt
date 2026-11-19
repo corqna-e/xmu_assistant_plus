@@ -7,6 +7,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -466,6 +467,71 @@ class XmuScoreAutoQueryClientTest {
         assertEquals("2025-1", record.term)
         assertEquals("优秀", record.resultText)
         assertEquals("", record.courseSeq)
+        assertNull(record.gradePoint) // 中文五级制不在换算表内，不参与 GPA
+    }
+
+    fun `graded course with letter in ZCJ shows the letter instead of the mode name`() {
+        val transport = FakeQueryTransport(
+            ArrayDeque(
+                listOf(
+                    response(body = """{"datas":{"cxycjdxnxq":{"rows":[{"XNXQDM":"2025-1","XNXQDM_DISPLAY":"fixture-term"}]}}}"""),
+                    response(body = """{"datas":{"xscjcx":{"rows":[{"KCH":"GE101","KCM":"通识课","XF":"2.0","ZCJ":"A","XFJD":null,"DJCJLXDM_DISPLAY":"等级制"}]}}}"""),
+                ),
+            ),
+        )
+        val record = scoreClient(transport, cookieHeader = "saved=session").fetchScores().records.single()
+
+        assertEquals("A", record.resultText)
+        assertEquals("等级制", record.gradeMode)
+        assertNull(record.score)
+        assertEquals(4.0, record.gradePoint!!, 1e-9) // v8：等级 A 补绩点 4.0
+        assertEquals(true, record.countsForStatistics)
+    }
+
+    fun `graded course finds grade text in an unknown field name`() {
+        val transport = FakeQueryTransport(
+            ArrayDeque(
+                listOf(
+                    response(body = """{"datas":{"cxycjdxnxq":{"rows":[{"XNXQDM":"2025-1","XNXQDM_DISPLAY":"fixture-term"}]}}}"""),
+                    response(body = """{"datas":{"xscjcx":{"rows":[{"KCH":"GE102","KCM":"通识课","XF":"2.0","ZCJ":"1","CUSTOM_GRADE_LABEL":"B+","DJCJLXDM_DISPLAY":"等级制"}]}}}"""),
+                ),
+            ),
+        )
+        val record = scoreClient(transport, cookieHeader = "saved=session").fetchScores().records.single()
+
+        assertEquals("B+", record.resultText)
+        assertEquals(3.3, record.gradePoint!!, 1e-9) // v8：等级 B+ 补绩点 3.3
+        assertEquals(true, record.countsForStatistics)
+    }
+
+    fun `graded course never treats D plus or F minus as a grade`() {
+        listOf("D+", "D-", "F+", "F-").forEach { notAGrade ->
+            val transport = FakeQueryTransport(
+                ArrayDeque(
+                    listOf(
+                        response(body = """{"datas":{"cxycjdxnxq":{"rows":[{"XNXQDM":"2025-1","XNXQDM_DISPLAY":"fixture-term"}]}}}"""),
+                        response(body = """{"datas":{"xscjcx":{"rows":[{"KCH":"GE104","KCM":"通识课","XF":"2.0","ZCJ":"1","CUSTOM_GRADE_LABEL":"$notAGrade","DJCJLXDM_DISPLAY":"等级制"}]}}}"""),
+                    ),
+                ),
+            )
+            val record = scoreClient(transport, cookieHeader = "saved=session").fetchScores().records.single()
+
+            assertEquals("—", record.resultText)
+        }
+    }
+
+    fun `graded course without any grade text never falls back to the mode name`() {
+        val transport = FakeQueryTransport(
+            ArrayDeque(
+                listOf(
+                    response(body = """{"datas":{"cxycjdxnxq":{"rows":[{"XNXQDM":"2025-1","XNXQDM_DISPLAY":"fixture-term"}]}}}"""),
+                    response(body = """{"datas":{"xscjcx":{"rows":[{"KCH":"GE103","KCM":"通识课","XF":"2.0","ZCJ":"0","DJCJLXDM_DISPLAY":"等级制"}]}}}"""),
+                ),
+            ),
+        )
+        val record = scoreClient(transport, cookieHeader = "saved=session").fetchScores().records.single()
+
+        assertEquals("—", record.resultText)
     }
 
     private fun scoreClient(

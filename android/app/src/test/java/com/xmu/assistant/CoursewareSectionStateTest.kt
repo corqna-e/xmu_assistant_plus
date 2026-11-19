@@ -122,6 +122,8 @@ class CoursewareSectionStateTest {
     @Test
     fun `load fills items persists cache and releases loading`() {
         val harness = newHarness(StubCoursewareTransport())
+        // 生产路径先由课程勾选回调激活课程（MainScreen.onCoursesSelected），夹具对齐。
+        harness.state.setActiveCourses(setOf(course.id))
         assertTrue(harness.state.load(course))
         assertTrue("课件列表未落地或 loading 未释放", await { harness.state.coursewareItems.isNotEmpty() && harness.state.loadingIds.isEmpty() })
         val item = harness.state.coursewareItems.single()
@@ -137,6 +139,7 @@ class CoursewareSectionStateTest {
     @Test
     fun `session expiry defers one-shot recovery with course bound retry`() {
         val harness = newHarness(StubCoursewareTransport(listCode = 401))
+        harness.state.setActiveCourses(setOf(course.id))
         assertTrue(harness.state.load(course))
         assertTrue("续登挂起未落地", await { harness.pendingRetries.isNotEmpty() })
         assertEquals(listOf(ModuleReadRetry(ModuleReadRequest.COURSEWARE, course)), harness.pendingRetries)
@@ -149,6 +152,7 @@ class CoursewareSectionStateTest {
     @Test
     fun `held course gate rejects load without any request`() {
         val harness = newHarness(StubCoursewareTransport())
+        harness.state.setActiveCourses(setOf(course.id))
         assertTrue(harness.gate.tryStart("courseware:${course.id}"))
         assertFalse(harness.state.load(course))
         assertTrue(harness.transport.requests.isEmpty())

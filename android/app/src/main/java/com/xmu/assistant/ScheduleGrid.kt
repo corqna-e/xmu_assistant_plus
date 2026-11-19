@@ -109,15 +109,15 @@ internal fun ScheduleWeekGrid(
     @Composable
     fun CourseCard(placement: ScheduleGridPlacement) {
         val group = placement.course
-            ScheduleGridCourseBlock(
-                group = group,
-                dimmed = selectedIsCurrent && group.weekday == todayWeekday && group.endTime < nowValue,
-                inProgress = selectedIsCurrent && group.weekday == todayWeekday && nowValue in group.startTime..group.endTime,
-                onClick = { onCourseSelected(group) },
-                modifier = Modifier.padding(3.dp * widthScale),
-                overlapping = placement.overlapping,
-                textScale = widthScale,
-            )
+        ScheduleGridCourseBlock(
+            group = group,
+            dimmed = selectedIsCurrent && group.weekday == todayWeekday && group.endTime < nowValue,
+            inProgress = selectedIsCurrent && group.weekday == todayWeekday && nowValue in group.startTime..group.endTime,
+            onClick = { onCourseSelected(group) },
+            modifier = Modifier.padding(3.dp * widthScale),
+            overlapping = placement.overlapping,
+            textScale = widthScale,
+        )
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         // 可用宽度锁定为卡片内容宽度（屏宽减去卡片内边距），列宽据此反推，

@@ -78,7 +78,6 @@ class ScheduleWidgetWorkerTimelineTest {
             settings.password = "synthetic-password"
             settings.cookieHeader = "session=identical"
             settings.scoreCookieHeader = "academic=initial"
-            settings.widgetEnabled = true
             settings.markLoginSucceeded()
             deleteScheduleSnapshotFile(context)
             ScheduleWidgetData.clear(context)

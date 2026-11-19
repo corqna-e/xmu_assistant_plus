@@ -31,19 +31,25 @@ class PrefStoresContractTest {
         ).first(File::isDirectory)
         val files = checkNotNull(sourceDir.listFiles()).filter { it.extension == "kt" }.map { it.name }
         val literal = Regex("""getSharedPreferences\("([^"]+)""")
+        // v112：加密存储的名字从字面量改为常量（ENCRYPTED_PREFS_NAME），
+        // 扫描器要同时认这两种写法，否则改了重构就会误报「登记表多了 xmu_assistant」。
         val encryptedLiteral = Regex("""EncryptedSharedPreferences\.create\(\s*\w+,\s*"([^"]+)""")
-        val constantDefs = Regex("""(?:private )?const val \w+ = "([a-z_]+)"""")
+        val constantDefs = Regex("""(?:private )?const val (\w+) = "([a-z_]+)"""")
         val names = mutableSetOf<String>()
         files.forEach { name ->
             val text = source(name)
             literal.findAll(text).forEach { names += it.groupValues[1] }
             encryptedLiteral.findAll(text).forEach { names += it.groupValues[1] }
-            // 常量定义（如 SEEN_PREFS = "rollcall_seen"）按"被 getSharedPreferences 引用"收录
+            // 常量定义（如 SEEN_PREFS = "rollcall_seen"）被引用时收录
             constantDefs.findAll(text).forEach { match ->
                 val constantName = Regex("""const val (\w+) =""").find(match.value)?.groupValues?.get(1)
-                if (constantName != null && "getSharedPreferences($constantName" in text) {
-                    names += match.groupValues[1]
-                }
+                    ?: return@forEach
+                val usedByPlain = "getSharedPreferences($constantName" in text
+                val usedByEncrypted = Regex(
+                    """EncryptedSharedPreferences\.create\(\s*\w+,\s*$constantName\s*,""",
+                ).containsMatchIn(text)
+                // groupValues[2] 是常量的值（文件名），[1] 是常量名——这里要的是文件名。
+                if (usedByPlain || usedByEncrypted) names += match.groupValues[2]
             }
         }
         return names

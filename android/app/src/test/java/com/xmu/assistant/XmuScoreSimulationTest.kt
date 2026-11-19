@@ -36,7 +36,7 @@ class XmuScoreSimulationTest {
             77.0 to 2.7, 75.0 to 2.7,
             74.0 to 2.3, 72.0 to 2.3,
             71.0 to 2.0, 68.0 to 2.0,
-            67.0 to 1.5, 64.0 to 1.5,
+            67.0 to 1.7, 64.0 to 1.7, // 2026-11-11 C- 按换算表改为 1.7
             63.0 to 1.0, 60.0 to 1.0,
             59.0 to 0.0, 0.0 to 0.0,
         )
@@ -185,8 +185,8 @@ class XmuScoreSimulationTest {
         // 极端多行：换算逐行、舍入只在汇总出口一次（与少行同口径）
         val rows = listOf("60" to "1", "64" to "1", "68" to "1", "72" to "1", "75" to "1")
         val summary = xmuSimulatedSummary(emptyList(), rows)
-        assertEquals(1.9, summary.averageGpa!!, 1e-9)      // (1.0+1.5+2.0+2.3+2.7)/5
-        assertEquals(1.9, summary.weightedGpa!!, 1e-9)     // 学分同为 1，加权=算术
+        assertEquals(1.94, summary.averageGpa!!, 1e-9)     // (1.0+1.7+2.0+2.3+2.7)/5
+        assertEquals(1.94, summary.weightedGpa!!, 1e-9)    // 学分同为 1，加权=算术
         assertEquals(67.8, summary.averageScore!!, 1e-9)   // (60+64+68+72+75)/5
         assertEquals(67.8, summary.weightedScore!!, 1e-9)  // 学分同为 1，加权=算术
         assertEquals(0.0, summary.completedCredits, 1e-9)

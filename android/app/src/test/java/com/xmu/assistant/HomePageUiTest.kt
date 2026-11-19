@@ -47,7 +47,7 @@ class HomePageUiTest {
                     monitorFailureCount = 0, monitorLastError = "", rollcallSettings = settings,
                     onUsername = {}, onPassword = {}, onLogin = {}, onLogout = logout,
                     onStartMonitor = start, onStopMonitor = stop, onAutoChanged = autoChanged,
-                    onOpenBackgroundSettings = {}, onNavigate = navigate,
+                    onNavigate = navigate,
                     currentRollcalls = events, rollcallLoading = rollcallLoading,
                     rollcallError = rollcallError, rollcallUpdatedAtMillis = updatedAt,
                 )
@@ -86,7 +86,7 @@ class HomePageUiTest {
         composeRule.onNodeWithText("数学建模 / 雷达签到").performScrollTo().assertExists()
         composeRule.onNodeWithText("查看签到详情").performScrollTo().performClick()
         composeRule.runOnIdle { assertEquals("签到情况", destination) }
-        composeRule.onNodeWithText("雷达签到坐标管理").performScrollTo().performClick()
+        composeRule.onNodeWithText("管理课程坐标").performScrollTo().performClick()
         composeRule.runOnIdle {
             assertEquals("课程坐标", destination)
         }
@@ -186,10 +186,10 @@ class HomePageUiTest {
                 ),
             )
         }
-        composeRule.onNodeWithText("自动签到快捷开关").performScrollTo().assertExists()
+        composeRule.onNodeWithText("自动签到").performScrollTo().assertExists()
         composeRule.onNodeWithText("仅数字 · 达到 8 人").assertExists()
-        composeRule.onNodeWithText("尚未生效，请先启动监控").assertExists()
-        composeRule.onNodeWithText("与策略页同步；此开关同时开启或关闭数字、雷达签到。").assertExists()
+        composeRule.onNodeWithText("尚未生效，请先启动签到监控").assertExists()
+        composeRule.onNodeWithText("此开关与设置页同步，同时开启或关闭数字与雷达签到。").assertExists()
     }
 
     @Test fun `strategy link and shortcut toggle dispatch expected values`() {
@@ -202,11 +202,10 @@ class HomePageUiTest {
                 navigate = { destination = it },
             )
         }
-        composeRule.onNodeWithText("调整类型与人数条件").performScrollTo().performClick()
-        composeRule.runOnIdle { assertEquals("策略", destination) }
-        composeRule.onNodeWithText("雷达签到坐标管理").performScrollTo().performClick()
+        // 首页卡片已改叫「调整签到策略」，且直达「自动签到策略」二级页（不再跳设置页）。
+        composeRule.onNodeWithText("调整签到策略").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals("自动签到策略", destination) }
+        composeRule.onNodeWithText("管理课程坐标").performScrollTo().performClick()
         composeRule.runOnIdle { assertEquals("课程坐标", destination) }
-        composeRule.onNodeWithText("自动签到快捷开关").performScrollTo().performClick()
-        composeRule.runOnIdle { assertEquals(false, enabled) }
     }
 }

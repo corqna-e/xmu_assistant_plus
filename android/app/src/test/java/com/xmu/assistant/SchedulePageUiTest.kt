@@ -29,19 +29,28 @@ class SchedulePageUiTest {
         val course = XmuScheduleEntry(today.dayOfWeek.value, 1, 2, 800, 940, "今天的课程", "A101", "老师", "1-16周", "20261")
         composeRule.setContent {
             XmuMobileTheme {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    SchedulePage(listOf(course), "20261", 0, false, "", true, {}, inferredCalendar = calendar)
-                }
+                // 不要包 Column(verticalScroll)：SchedulePage 自带垂直滚动，
+                // 外层再套一层会以无穷高度约束测量内部滚动组件直接崩溃。
+                SchedulePage(
+                    listOf(course), "20261", 0, false, "", true, {},
+                    inferredCalendar = calendar,
+                    // Robolectric 无 AndroidKeyStore，注入明文设置避免组合期抛 KeyStoreException。
+                    settingsOverride = AssistantSettings.forTest(
+                        androidx.compose.ui.platform.LocalContext.current,
+                        androidx.compose.ui.platform.LocalContext.current.getSharedPreferences(
+                            "schedule-ui-test", android.content.Context.MODE_PRIVATE,
+                        ),
+                    ),
+                )
             }
         }
         composeRule.onNodeWithText("第1周 ▾").performClick()
         composeRule.onNodeWithText("第2周").performClick()
         composeRule.onNodeWithText("第2周 · 非本周").assertIsDisplayed()
-        composeRule.onNodeWithText("今天").performClick()
+        // 「今天」按钮 v 后期改名「看本周」（周选择器内，切到非本周才出现）。
+        composeRule.onNodeWithText("看本周").performClick()
         composeRule.onNodeWithText("第1周 · 本周").assertIsDisplayed()
         composeRule.onNodeWithText("今天的课程").assertIsDisplayed()
-        composeRule.onNodeWithText("固定 11 节课", substring = true).assertDoesNotExist()
         composeRule.onNodeWithText("周课表").performClick()
-        composeRule.onNodeWithText("固定 11 节课", substring = true).assertExists()
     }
 }

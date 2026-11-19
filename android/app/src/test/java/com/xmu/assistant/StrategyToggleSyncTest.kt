@@ -45,13 +45,13 @@ class StrategyToggleSyncTest {
 
     @Test
     fun `toggle follows an external change made while the page was off screen`() {
-        var page by mutableStateOf("策略")
+        var page by mutableStateOf(Page.SETTINGS)
         var saved by mutableStateOf(false)
         composeRule.setContent {
             XmuMobileTheme {
                 PageStateHost(page, "student-a") {
                     when (page) {
-                        "策略" -> ToggleHarness(saved)
+                        Page.SETTINGS -> ToggleHarness(saved)
                         else -> Text("home")
                     }
                 }
@@ -60,9 +60,9 @@ class StrategyToggleSyncTest {
         composeRule.onNodeWithTag("number").assertTextEquals("number=false")
 
         // 离开策略页 → 首页开关改写已保存值 → 回到策略页：本地副本必须跟到 true
-        composeRule.runOnIdle { page = "首页" }
+        composeRule.runOnIdle { page = Page.HOME }
         composeRule.runOnIdle { saved = true }
-        composeRule.runOnIdle { page = "策略" }
+        composeRule.runOnIdle { page = Page.SETTINGS }
 
         composeRule.onNodeWithTag("number").assertTextEquals("number=true")
     }

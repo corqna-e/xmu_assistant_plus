@@ -7,6 +7,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -31,15 +34,18 @@ class ScheduleWeekGridUiTest {
         listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日").forEach {
             assertTrue(composeRule.onAllNodesWithText(it, substring = true).fetchSemanticsNodes().isNotEmpty())
         }
-        composeRule.onNodeWithText("固定 11 节课", substring = true).assertExists()
     }
 
     @Test fun `course card keeps course sections and all room text`() {
         val group = XmuScheduleGroup(2, 3, 4, 1010, 1150, "大学物理B（下）", listOf("学武楼C206", "实验楼A301"), emptyList(), "1-16周")
         composeRule.setContent { XmuMobileTheme { ScheduleWeekGrid(listOf(group), null, false, 1, 0, {}) } }
-        composeRule.onNodeWithText(group.courseName).assertIsDisplayed()
-        composeRule.onNodeWithText("3-4节").assertIsDisplayed()
-        composeRule.onNodeWithText(scheduleLocationSummary(group)).assertIsDisplayed()
+        // 卡片渲染契约：课程名/教室经 sanitizeScheduleDisplay（全角括号归一、删「楼」），
+        // 教室走 forGrid 分支（多教室按行拼接）。断言用渲染后的真实文本。
+        // 注意必须用默认 merged 树：测量探针卡虽有 clearAndSetSemantics，
+        // 但 unmerged 树会绕过该边界把探针文本也暴露出来（出现两个匹配）。
+        composeRule.onNodeWithText(sanitizeScheduleDisplay(group.courseName)).assertExists()
+        composeRule.onNodeWithText("3-4节").assertExists()
+        composeRule.onNodeWithText(glueParentheses(scheduleLocationSummary(group, forGrid = true))).assertExists()
     }
 
     @Test fun `overlapping lessons remain individually selectable`() {

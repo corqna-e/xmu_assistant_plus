@@ -28,28 +28,29 @@ import org.robolectric.annotation.GraphicsMode
 class ThemeUiTest {
     @get:Rule val composeRule = createComposeRule()
 
-    @Test fun `all five destinations are visible and selectable on a narrow phone`() {
+    @Test fun `all four bottom tabs are visible and selectable on a narrow phone`() {
         composeRule.setContent {
             XmuMobileTheme(THEME_MODE_LIGHT) {
-                var selected by remember { mutableStateOf("首页") }
-                AppNavigationBar(selected, NotificationSettings(), 0) { selected = it }
+                var selected by remember { mutableStateOf(Page.HOME) }
+                AppNavigationBar(selected, NotificationSettings(), 0, onSelected = { selected = it })
             }
         }
-        listOf("首页", "课表", "成绩", "签到", "更多").forEach { title ->
+        // v17：成绩已从底栏移入「更多」，底栏只剩四键。
+        listOf("首页", "课表", "签到", "更多").forEach { title ->
             composeRule.onNodeWithText(title).assertIsDisplayed().assertHeightIsAtLeast(48.dp)
             composeRule.onNodeWithText(title).performClick().assertIsSelected()
         }
     }
 
     @Test fun `secondary pages highlight more in dark theme and expose hub on click`() {
-        var destination = ""
+        var destination: Page? = null
         composeRule.setContent {
             XmuMobileTheme(THEME_MODE_DARK) {
-                AppNavigationBar("课程课件", NotificationSettings(), 3) { destination = it }
+                AppNavigationBar(Page.COURSEWARE, NotificationSettings(), 3, onSelected = { destination = it })
             }
         }
         composeRule.onNodeWithText("更多").assertIsSelected().performClick()
-        composeRule.runOnIdle { assertEquals("更多", destination) }
+        composeRule.runOnIdle { assertEquals(Page.MORE, destination) }
         composeRule.onNodeWithText("更多").assert(
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "3 个文件下载中"),
         )
@@ -57,14 +58,17 @@ class ThemeUiTest {
     }
 
     @Test fun `all secondary destinations remain reachable including notification setup`() {
-        var selected = ""
+        var selected: Page? = null
         composeRule.setContent {
             XmuMobileTheme(THEME_MODE_LIGHT) {
                 MorePage(NotificationSettings(pushPlusEnabled = true), 0) { selected = it }
             }
         }
         composeRule.onNodeWithText("有通知渠道待配置").assertIsDisplayed()
-        moreDestinations.forEach {
+        // 排除两类：开发中入口不响应点击；课程坐标是「设置」下的三级界面，不在更多页展示。
+        moreDestinations
+            .filter { it.statusLabel.isEmpty() && it.page != Page.COURSE_LOCATION }
+            .forEach {
             composeRule.onNodeWithText(it.label).performClick()
             composeRule.runOnIdle { assertEquals(it.page, selected) }
         }

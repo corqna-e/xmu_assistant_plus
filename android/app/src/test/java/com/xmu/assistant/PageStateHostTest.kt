@@ -27,7 +27,7 @@ class PageStateHostTest {
     @get:Rule val composeRule = createComposeRule()
 
     @Test fun `page input survives navigation and recreation but never crosses accounts`() {
-        var page by mutableStateOf("课程课件")
+        var page by mutableStateOf(Page.COURSEWARE)
         var owner by mutableStateOf("student-a")
         val restoration = StateRestorationTester(composeRule)
         restoration.setContent {
@@ -39,9 +39,9 @@ class PageStateHostTest {
             }
         }
         composeRule.onNodeWithTag("query").performTextInput("高等数学")
-        composeRule.runOnIdle { page = "课表" }
+        composeRule.runOnIdle { page = Page.SCHEDULE }
         composeRule.onNodeWithTag("query").assertTextEquals("")
-        composeRule.runOnIdle { page = "课程课件" }
+        composeRule.runOnIdle { page = Page.COURSEWARE }
         composeRule.onNodeWithTag("query").assertTextEquals("高等数学")
         restoration.emulateSavedInstanceStateRestore()
         composeRule.onNodeWithTag("query").assertTextEquals("高等数学")
@@ -50,9 +50,9 @@ class PageStateHostTest {
     }
 
     @Test fun `back targets preserve navigation hierarchy`() {
-        assertEquals("更多", parentPage("课程课件"))
-        assertEquals("更多", parentPage("策略"))
-        assertEquals("首页", parentPage("更多"))
-        assertEquals("首页", parentPage("课表"))
+        assertEquals(Page.MORE, parentPage(Page.COURSEWARE))
+        assertEquals(Page.MORE, parentPage(Page.SETTINGS))
+        assertEquals(Page.HOME, parentPage(Page.MORE))
+        assertEquals(Page.HOME, parentPage(Page.SCHEDULE))
     }
 }

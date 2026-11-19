@@ -27,7 +27,7 @@ class ScheduleWidgetRendererTest {
         ScheduleWidgetCourse("课程四", 1910, 2050, 9, 10, "教学楼 B-201"),
     )
 
-    @Test fun `small widget shows upcoming course and makes overflow explicit`() {
+    @Test fun `small widget keeps only the upcoming courses that fit`() {
         val plan = widgetCoursePlan(courses, 1000, 70) { 60 }
         assertEquals(listOf("课程二"), plan.courses.map { it.courseName })
         assertEquals(2, plan.hiddenCount)
@@ -36,9 +36,11 @@ class ScheduleWidgetRendererTest {
         assertTrue(widgetCoursePlan(courses, 2100, 180) { 60 }.courses.isEmpty())
     }
 
-    private fun render(snapshot: ScheduleWidgetSnapshot?, height: Int = 160, enabled: Boolean = true, width: Int = 250): View {
+    private fun render(snapshot: ScheduleWidgetSnapshot?, height: Int = 160, enabled: Boolean = true,
+                       width: Int = 250, tomorrow: ScheduleWidgetSnapshot? = null): View {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val remote = buildScheduleWidgetViews(context, snapshot, enabled, height, today, LocalTime.of(10, 0), widthDp = width)
+        val remote = buildScheduleWidgetViews(context, snapshot, enabled, height, today, LocalTime.of(10, 0),
+            widthDp = width, tomorrow = tomorrow)
         return remote.apply(context, FrameLayout(context)).apply {
             val density = context.resources.displayMetrics.density
             measure(View.MeasureSpec.makeMeasureSpec((width * density).toInt(), View.MeasureSpec.EXACTLY),
@@ -66,24 +68,21 @@ class ScheduleWidgetRendererTest {
         assertEquals(courses[1].location, location.text.toString())
         assertTrue(location.top >= title.bottom)
         assertTrue(title.width > first.findViewById<TextView>(R.id.row_time).width)
-        assertTrue(view.findViewById<TextView>(R.id.widget_footer).visibility == View.GONE || rows.bottom <= view.findViewById<TextView>(R.id.widget_footer).top)
-        assertTrue(view.findViewById<TextView>(R.id.widget_footer).text.contains("另有 1 门课"))
     }
 
-    @Test fun `minimum height widget keeps every visible row above the footer`() {
+    @Test fun `minimum height widget keeps every visible row inside its container`() {
         val snapshot = ScheduleWidgetSnapshot(1, 2, "20261", listOf(courses[1].copy(location = "翔安校区 学武楼 B-205\n思明校区 海韵教学楼 A-301")), today.toEpochDay())
         val view = render(snapshot, 128)
         val rows = view.findViewById<LinearLayout>(R.id.widget_courses)
         assertEquals(1, rows.childCount)
         assertTrue("course row cannot extend past its container", rows.getChildAt(0).bottom <= rows.height)
-        assertTrue(view.findViewById<TextView>(R.id.widget_footer).visibility == View.GONE || rows.bottom <= view.findViewById<TextView>(R.id.widget_footer).top)
     }
+
     @Test fun `wide desktop widget keeps old three column alignment with bounded classroom width`() {
         val snapshot = ScheduleWidgetSnapshot(1, 2, "20261", courses, today.toEpochDay())
         val view = render(snapshot, 150, width = 350)
         val rows = view.findViewById<LinearLayout>(R.id.widget_courses)
         assertEquals(3, rows.childCount)
-        assertEquals(View.GONE, view.findViewById<View>(R.id.widget_footer).visibility)
         for (index in 0 until rows.childCount) {
             val row = rows.getChildAt(index)
             val time = row.findViewById<TextView>(R.id.row_time)
@@ -98,23 +97,21 @@ class ScheduleWidgetRendererTest {
         }
     }
 
-    @Test fun `short widget uses available space without permanent footer`() {
+    @Test fun `short widget uses available space without an overflow note`() {
         val snapshot = ScheduleWidgetSnapshot(1, 2, "20261", listOf(courses[1]), today.toEpochDay())
         val view = render(snapshot, 96)
         val rows = view.findViewById<LinearLayout>(R.id.widget_courses)
         assertEquals(1, rows.childCount)
-        assertEquals(View.GONE, view.findViewById<View>(R.id.widget_footer).visibility)
         assertTrue(rows.getChildAt(0).bottom <= rows.height)
     }
 
-    @Test fun `one row launcher size retains a course and explicit overflow`() {
+    @Test fun `one row launcher size retains a course`() {
         val snapshot = ScheduleWidgetSnapshot(1, 2, "20261", courses, today.toEpochDay())
         val view = render(snapshot, 56, width = 350)
         val rows = view.findViewById<LinearLayout>(R.id.widget_courses)
         assertEquals(View.GONE, view.findViewById<View>(R.id.widget_header).visibility)
         assertEquals(1, rows.childCount)
         assertTrue(rows.getChildAt(0).bottom <= rows.height)
-        assertTrue(view.findViewById<TextView>(R.id.widget_footer).text.contains("另有 2 门课"))
     }
 
     @Test fun `launcher reapply restores header and padding after growing compact widget`() {
@@ -126,7 +123,25 @@ class ScheduleWidgetRendererTest {
         val large = buildScheduleWidgetViews(context, snapshot, true, 183, today, LocalTime.of(10, 0), 196)
         large.reapply(context, view)
         assertEquals(View.VISIBLE, view.findViewById<View>(R.id.widget_header).visibility)
-        assertEquals((12 * context.resources.displayMetrics.density).toInt(), view.paddingTop)
+        val contentPadding = view.findViewById<View>(R.id.widget_content).paddingTop
+        assertEquals((12 * context.resources.displayMetrics.density).toInt(), contentPadding)
     }
 
+    @Test fun `tomorrow preview follows the last today course and shows as many lines as fit`() {
+        val todaySnap = ScheduleWidgetSnapshot(1, 2, "20261", listOf(courses[1]), today.toEpochDay())
+        val tomorrowSnap = ScheduleWidgetSnapshot(1, 2, "20261", courses, today.plusDays(1).toEpochDay())
+        // 高度充裕：明日区排在今日最后一门课程之后（而非卡片底部留白），按余量显示全部放得下的行。
+        val roomy = render(todaySnap, height = 200, tomorrow = tomorrowSnap)
+        val roomyRows = roomy.findViewById<LinearLayout>(R.id.widget_courses)
+        val roomyBox = roomy.findViewById<View>(R.id.widget_tomorrow_box)
+        assertEquals(1, roomyRows.childCount)
+        assertEquals(View.VISIBLE, roomyBox.visibility)
+        assertTrue("明日区应紧跟今日最后一门课后", roomyBox.top >= roomyRows.getChildAt(roomyRows.childCount - 1).bottom)
+        val roomyLines = roomy.findViewById<LinearLayout>(R.id.widget_tomorrow_lines).childCount
+        assertTrue("高度充裕时应显示更多明日行", roomyLines in 1..4)
+        // 高度紧张：余量连明日区固定开销与一行都放不下时整块隐藏，优先保证今日课程完整（v113 设计）。
+        val tight = render(todaySnap, height = 128, tomorrow = tomorrowSnap)
+        val tightBox = tight.findViewById<View>(R.id.widget_tomorrow_box)
+        assertEquals(View.GONE, tightBox.visibility)
+    }
 }

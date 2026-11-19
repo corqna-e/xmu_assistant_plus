@@ -63,7 +63,7 @@ class NotificationSendersTest {
         }
 
         val error = org.junit.Assert.assertThrows(SmtpSubmissionUncertainException::class.java) {
-            QQMailSender("sender", "password", "recipient", "465,587", factory).send("title", "body")
+            QQMailSender("sender", "password", "recipient", "465,587", "", factory).send("title", "body")
         }
 
         assertTrue(error.message.orEmpty().contains("结果未知"))
@@ -84,7 +84,7 @@ class NotificationSendersTest {
             }
         }
 
-        QQMailSender("sender", "password", "recipient", "465,587", factory).send("title", "body")
+        QQMailSender("sender", "password", "recipient", "465,587", "", factory).send("title", "body")
 
         assertEquals(listOf("465", "587"), openedPorts)
         assertEquals(1, sends)
@@ -101,7 +101,7 @@ class NotificationSendersTest {
             }
         }
 
-        QQMailSender("sender", "password", "recipient", "465,587", factory).send("title", "body")
+        QQMailSender("sender", "password", "recipient", "465,587", "", factory).send("title", "body")
 
         assertEquals(listOf("465"), openedPorts)
         assertEquals(1, sends)
@@ -122,7 +122,7 @@ class NotificationSendersTest {
         }
 
         org.junit.Assert.assertThrows(IllegalStateException::class.java) {
-            QQMailSender("sender", "password", "recipient", "587,465", factory).send("title", "body")
+            QQMailSender("sender", "password", "recipient", "587,465", "", factory).send("title", "body")
         }
 
         assertEquals(listOf("587", "465"), openedPorts)
@@ -149,7 +149,7 @@ class NotificationSendersTest {
             }
 
             org.junit.Assert.assertThrows(IllegalStateException::class.java) {
-                QQMailSender("fixture-user", "fixture-password", "to@example.test", "465", factory)
+                QQMailSender("fixture-user", "fixture-password", "to@example.test", "465", "", factory)
                     .send("fixture", "fixture")
             }
 
@@ -188,7 +188,7 @@ class NotificationSendersTest {
             }
 
             try {
-                QQMailSender("fixture-user", "fixture-password", "to@example.test", "465", factory)
+                QQMailSender("fixture-user", "fixture-password", "to@example.test", "465", "", factory)
                     .send("fixture", "body")
             } catch (error: Exception) {
                 throw AssertionError("local TLS server failed: ${server.failure}", error)
@@ -213,7 +213,7 @@ class NotificationSendersTest {
             }
 
             org.junit.Assert.assertThrows(IllegalStateException::class.java) {
-                QQMailSender("fixture-user", "fixture-password", "to@example.test", "587", factory)
+                QQMailSender("fixture-user", "fixture-password", "to@example.test", "587", "", factory)
                     .send("fixture", "body")
             }
 
@@ -236,7 +236,7 @@ class NotificationSendersTest {
                 JavaMailSmtpConnectionFactory.open(properties, sender, password)
             }
 
-            QQMailSender("fixture-user", "fixture-password", "to@example.test", "587", factory)
+            QQMailSender("fixture-user", "fixture-password", "to@example.test", "587", "", factory)
                 .send("fixture", "body")
 
             assertTrue(server.awaitConnection())

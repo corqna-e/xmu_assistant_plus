@@ -70,8 +70,12 @@ class CoursewareCacheTimelineTest {
         )
 
         fun startDownload(): Job {
+            // 生产路径由 MainScreen 的课程勾选回调先 setActiveCourses 再 load，
+            // 夹具必须同样先激活课程，否则 coursewareItems 为空、勾选不到任何课件。
+            state.setActiveCourses(setOf(courseA.id))
             assertFalse(state.load(courseA))
-            state.toggleSelectAll()
+            // v81 起课件到达后即自动勾选；此时再调 toggleSelectAll 处于全选态，反而会清空勾选。
+            check(state.selectedCoursewareIds.isNotEmpty()) { "fixture expects auto-selected courseware" }
             val previous = parent.children.toSet()
             state.downloadSelected()
             val request = parent.children.single { it !in previous }
@@ -80,6 +84,7 @@ class CoursewareCacheTimelineTest {
         }
 
         fun load(course: CourseSummary): Job {
+            state.setActiveCourses(setOf(course.id))
             val previous = parent.children.toSet()
             assertTrue(state.load(course, forceRefresh = true))
             return parent.children.single { it !in previous }
@@ -114,6 +119,9 @@ class CoursewareCacheTimelineTest {
     fun `finishing a download after selecting another course keeps that course's progress empty`() {
         Harness().use { h ->
             val request = h.startDownload()
+            // 生产里换课同样先 setActiveCourses 再 load（MainScreen.onCoursesSelected），
+            // 夹具直接调 state.load 必须补齐这一步，否则合并列表仍停在上一门课。
+            h.state.setActiveCourses(setOf(courseB.id))
             assertFalse(h.state.load(courseB))
             assertEquals("", h.state.coursewareDownloadProgress)
             h.releaseDownload.countDown()

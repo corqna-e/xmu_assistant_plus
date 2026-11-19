@@ -43,7 +43,6 @@ class StrategyPageRollcallUiTest {
                         themeMode = THEME_MODE_SYSTEM,
                         onThemeModeChanged = {},
                         onSaved = { saves++ },
-                        onWidgetToggle = {},
                         onAddWidget = {},
                         onManualWeekSet = {},
                     )
@@ -51,10 +50,10 @@ class StrategyPageRollcallUiTest {
             }
         }
         composeRule.onNodeWithText("达到人数").performScrollTo().performClick()
-        composeRule.onNodeWithText("当前修改尚未保存；点击“保存策略更改”后生效。").assertExists()
+        composeRule.onNodeWithText("当前修改尚未保存；点击“保存设置更改”后生效。").assertExists()
         composeRule.onNodeWithText("达到人数后自动处理（至少 1 人）").performTextClearance()
         composeRule.onNodeWithText("请输入至少 1 的整数").assertExists()
-        composeRule.onNodeWithText("保存策略更改").performScrollTo().assertIsNotEnabled().performClick()
+        composeRule.onNodeWithText("保存设置更改").performScrollTo().assertIsNotEnabled().performClick()
         composeRule.runOnIdle { assertEquals(0, saves) }
     }
 }

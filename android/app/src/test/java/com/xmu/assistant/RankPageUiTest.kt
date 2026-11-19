@@ -32,7 +32,7 @@ class RankPageUiTest {
             composeRule.setContent { XmuMobileTheme { RankPage(state) {} } }
             composeRule.onNodeWithText("重新获取专业排名").assertExists()
             composeRule.onNodeWithText("清理 PDF").performScrollTo().performClick()
-            composeRule.onNodeWithText("清理本地 PDF？").assertIsDisplayed()
+            composeRule.onNodeWithText("清理本地 PDF").assertIsDisplayed()
             composeRule.onNodeWithText("取消").performClick()
             composeRule.runOnIdle { assertEquals("cGRm", state.cache.result?.pdfBase64) }
             composeRule.onNodeWithText("清理 PDF").performClick()

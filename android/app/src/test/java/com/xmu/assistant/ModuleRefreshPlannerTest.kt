@@ -11,18 +11,17 @@ class ModuleRefreshPlannerTest {
 
     @Test
     fun `maps each business page to its refresh module`() {
-        assertEquals(RefreshModule.ROLLCALL, refreshModuleForPage("首页"))
-        assertEquals(RefreshModule.ROLLCALL, refreshModuleForPage("签到情况"))
-        assertEquals(RefreshModule.SCORES, refreshModuleForPage("成绩"))
-        assertEquals(RefreshModule.COURSES, refreshModuleForPage("课程课件"))
-        assertEquals(RefreshModule.COURSES, refreshModuleForPage("缓存课件"))
-        assertEquals(RefreshModule.COURSES, refreshModuleForPage("课程坐标"))
+        assertEquals(RefreshModule.ROLLCALL, refreshModuleForPage(Page.HOME))
+        assertEquals(RefreshModule.ROLLCALL, refreshModuleForPage(Page.ROLLCALL))
+        assertEquals(RefreshModule.SCORES, refreshModuleForPage(Page.SCORES))
+        assertEquals(RefreshModule.COURSES, refreshModuleForPage(Page.COURSEWARE))
+        assertEquals(RefreshModule.COURSES, refreshModuleForPage(Page.COURSE_LOCATION))
     }
 
     @Test
-    fun `maps non business blank and unknown pages to none`() {
+    fun `maps non business pages to none`() {
         // 课表不自动刷新：点击标签直接展示缓存，由用户手动点刷新
-        listOf("课表", "通知", "教程", "策略", "", "未知页面").forEach { page ->
+        listOf(Page.SCHEDULE, Page.NOTIFICATION, Page.TUTORIAL, Page.SETTINGS).forEach { page ->
             assertEquals(RefreshModule.NONE, refreshModuleForPage(page))
         }
     }

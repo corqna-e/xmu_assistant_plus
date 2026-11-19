@@ -278,11 +278,15 @@ fun XmuAssistantApp(
     // 外观主题模式（浅色/深色/跟随系统），用户可在「更多 → 通知与外观」切换
     var themeMode by remember { mutableStateOf(settings.themeMode) }
     // 隐私模式（大标题逐字换字母、签到→举手、成绩→游戏点）。首帧用 prefs 值初始化全局状态，
-    //同时恢复用户自定义的换词规则恢复「标题是否替换」开关。
+    // 同时恢复用户自定义的换词规则与「标题是否替换」开关。
+    // 这里必须在组合期同步恢复：LocalPrivacyMode 由 MainScreen 的 XmuMobileTheme 下发，
+    // 晚于本处组合；换成 SideEffect 会让首帧先渲染出未遮蔽内容。lambda 末尾返回非 Unit
+    // 值以符合 lint 对 remember 返回类型的要求。
     remember {
         PrivacyModeState.set(settings.privacyMode)
         PrivacyModeState.loadRules(settings.privacyRules)
         PrivacyModeState.loadTitleMasked(settings.privacyTitleMasked)
+        PrivacyModeState.enabled
     }
 
     //toastSeq：相同文案连续 show 时值不变、旧计时器不重启会把「新」toast 提前清掉，

@@ -19,7 +19,7 @@ class ScheduleWidgetProjectionTest {
     @Test fun `offline summaries advance date and week without leaking courses from the wrong week`() {
         val days = projectScheduleWidgetDays(listOf(base, base.copy(room = "B202"), base.copy(courseName = "课程乙", weeks = "2周")), "20261", calendar, today = monday)
         assertEquals(14, days.size)
-        assertEquals("A101\nB202", days[0].courses.single().location)
+        assertEquals("A101、B202", days[0].courses.single().location)
         assertEquals("课程乙", days[7].courses.single().courseName)
         assertEquals(2, days[7].week)
         assertTrue(days[1].courses.isEmpty())
