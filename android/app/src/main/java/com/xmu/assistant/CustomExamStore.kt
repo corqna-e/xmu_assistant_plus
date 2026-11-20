@@ -1,9 +1,13 @@
 package com.xmu.assistant
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * 用户自定义考试安排（手动输入，不来自教务抓取）。
@@ -48,13 +52,40 @@ data class CustomExam(
  */
 internal object CustomExamStore {
     private const val FILE_NAME = "custom_exams.json"
+    private const val BACKUP_NAME = "custom_exams.json.bak"
+    private const val TAG = "CustomExamStore"
 
-    /** 读取全部自定义考试；文件缺失或损坏时返回空列表（不让一条坏数据拖垮整页）。 */
-    fun load(context: Context): List<CustomExam> = runCatching {
-        val file = File(context.filesDir, FILE_NAME)
-        if (!file.exists()) return@runCatching emptyList()
-        val array = JSONArray(file.readText())
-        (0 until array.length()).mapNotNull { index ->
+    /** 写锁：保存由多条 IO 协程发起，共用同一个 .tmp 会字节交错（torn-write）。 */
+    private val writeLock = Any()
+
+    /** 读取结果。damaged=true 表示主文件存在但无法解析（已尝试备份），调用方据此提示。 */
+    data class LoadResult(val exams: List<CustomExam>, val damaged: Boolean)
+
+    /** 读取全部自定义考试；文件缺失按空列表处理，解析失败才置 damaged。 */
+    fun load(context: Context): List<CustomExam> = loadResult(context).exams
+
+    fun loadResult(context: Context): LoadResult {
+        val main = File(context.filesDir, FILE_NAME)
+        parse(main)?.let { return LoadResult(it, damaged = false) }
+        // 文件不存在 = 新装或从未保存过，不算损坏
+        if (!main.exists()) return LoadResult(emptyList(), damaged = false)
+        parse(File(context.filesDir, BACKUP_NAME))?.let {
+            Log.w(TAG, "自定义考试主文件损坏，已从备份恢复")
+            return LoadResult(it, damaged = true)
+        }
+        Log.w(TAG, "自定义考试主文件与备份均无法解析")
+        return LoadResult(emptyList(), damaged = true)
+    }
+
+    /** 解析失败返回 null，与「解析成功但为空列表」区分开。 */
+    private fun parse(file: File): List<CustomExam>? {
+        if (!file.exists()) return null
+        return runCatching { decode(file.readText()) }.getOrNull()
+    }
+
+    private fun decode(raw: String): List<CustomExam> {
+        val array = JSONArray(raw)
+        return (0 until array.length()).mapNotNull { index ->
             val obj = array.optJSONObject(index) ?: return@mapNotNull null
             val id = obj.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
             CustomExam(
@@ -80,31 +111,77 @@ internal object CustomExamStore {
                 },
             )
         }
-    }.getOrDefault(emptyList())
+    }
 
-    /** 全量覆盖写入（调用方负责在 IO 线程调用）。 */
-    fun save(context: Context, exams: List<CustomExam>) {
-        runCatching {
-            val array = JSONArray()
-            exams.forEach { exam ->
-                array.put(
-                    JSONObject().apply {
-                        put("id", exam.id)
-                        put("courseName", exam.courseName)
-                        put("date", exam.date)
-                        put("timeRange", exam.timeRange)
-                        put("room", exam.room)
-                        // 写集合本身（升序稳定序列化）；保留两个旧字段作为降级兼容，
-                        // 老版本 App 仍能按 startSection..endSection 读出大致落位。
-                        put("sections", JSONArray(exam.sections.sorted()))
-                        val first = exam.sections.minOrNull() ?: 0
-                        val last = exam.sections.maxOrNull() ?: 0
-                        put("startSection", first)
-                        put("endSection", last)
+    /**
+     * 全量原子写入（调用方负责在 IO 线程调用）。
+     *
+     * 先写 `custom_exams.json.tmp`，把旧文件复制成 `.bak`，再 ATOMIC_MOVE 替换正式文件；
+     * 任何一步失败都不动正式文件，返回 false 并留日志。与 ScheduleCache 同一范式：
+     * 直接用 writeText 覆盖时，进程写到一半被杀会留下半截 JSON，下次读取静默按空处理。
+     */
+    fun save(context: Context, exams: List<CustomExam>): Boolean {
+        val target = File(context.filesDir, FILE_NAME)
+        val backup = File(context.filesDir, BACKUP_NAME)
+        val temp = File(context.filesDir, "$FILE_NAME.tmp")
+        return synchronized(writeLock) {
+            try {
+                temp.writeText(encode(exams))
+                // 覆盖前留一份备份；备份失败不阻断本次写入。
+                // 只备份「能解析」的旧文件——损坏的主文件不许覆盖掉好备份。
+                if (target.exists() && parse(target) != null) {
+                    runCatching {
+                        Files.copy(target.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING)
                     }
-                )
+                }
+                // 原子替换，避免写一半崩溃留下损坏文件
+                var replaced = replace(temp, target)
+                for (attempt in 1..3) {
+                    if (replaced) break
+                    Thread.sleep(20)
+                    replaced = replace(temp, target)
+                }
+                if (!replaced) throw IOException("custom exam atomic replace failed")
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "自定义考试写入失败：${e.message}", e)
+                false
+            } finally {
+                if (temp.exists()) temp.delete()
             }
-            File(context.filesDir, FILE_NAME).writeText(array.toString())
         }
+    }
+
+    private fun replace(temp: File, target: File): Boolean = runCatching {
+        Files.move(
+            temp.toPath(),
+            target.toPath(),
+            StandardCopyOption.ATOMIC_MOVE,
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+        true
+    }.getOrDefault(false)
+
+    private fun encode(exams: List<CustomExam>): String {
+        val array = JSONArray()
+        exams.forEach { exam ->
+            array.put(
+                JSONObject().apply {
+                    put("id", exam.id)
+                    put("courseName", exam.courseName)
+                    put("date", exam.date)
+                    put("timeRange", exam.timeRange)
+                    put("room", exam.room)
+                    // 写集合本身（升序稳定序列化）；保留两个旧字段作为降级兼容，
+                    // 老版本 App 仍能按 startSection..endSection 读出大致落位。
+                    put("sections", JSONArray(exam.sections.sorted()))
+                    val first = exam.sections.minOrNull() ?: 0
+                    val last = exam.sections.maxOrNull() ?: 0
+                    put("startSection", first)
+                    put("endSection", last)
+                }
+            )
+        }
+        return array.toString()
     }
 }

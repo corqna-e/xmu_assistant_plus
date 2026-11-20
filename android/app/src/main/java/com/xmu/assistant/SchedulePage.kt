@@ -349,12 +349,6 @@ internal fun SchedulePage(
     requestedViewSeq: Int = 0,
     /**顶部「第N周 · 本周」可点击，跳到「设置 - 当前周次」内页。 */
     onOpenManualWeek: () -> Unit = {},
-    /**
-     * 缩放设置的存取器，默认现场构造加密设置。
-     * 测试环境（Robolectric 无 AndroidKeyStore）注入 AssistantSettings.forTest 的明文实例，
-     * 否则组合期即抛 KeyStoreException。
-     */
-    settingsOverride: AssistantSettings? = null,
 ) {
     val today = LocalDate.now()
     val context = LocalContext.current
@@ -402,7 +396,7 @@ internal fun SchedulePage(
     // UI 把这个默认点重标为「100%」（显示值 = gridScale / 0.75 * 100），
     // 滑条范围 33%~150%（上限由 200% 收到 150%），用户看到的 100% 就是最合适的标准大小。
     // 缩放值存入加密设置，跨重启自动记住（rememberSaveable 只负责转屏恢复）。
-    val appSettings = settingsOverride ?: remember(context) { AssistantSettings(context) }
+    val appSettings = remember(context) { AssistantSettings(context) }
     var gridScale by rememberSaveable { mutableStateOf(appSettings.scheduleGridScale) }
     fun updateGridScale(value: Float) {
         val clamped = value.coerceIn(MIN_GRID_SCALE, MAX_GRID_SCALE)

@@ -119,32 +119,29 @@ fun saveScheduleSnapshotToFile(file: File, snapshot: XmuScheduleSnapshot) {
     }
 }
 
-/** 原子写入实现；替换器参数仅供 JVM 测试模拟 rename 失败。 */
-internal fun writeScheduleSnapshotAtomically(
-    file: File,
-    json: String,
-    rename: (File, File) -> Boolean = { source, target ->
-        runCatching {
-            Files.move(
-                source.toPath(),
-                target.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-            true
-        }.getOrDefault(false)
-    },
-) {
+/** 原子替换：ATOMIC_MOVE 失败返回 false（调用方按重试处理）。 */
+private fun atomicReplace(source: File, target: File): Boolean = runCatching {
+    Files.move(
+        source.toPath(),
+        target.toPath(),
+        StandardCopyOption.ATOMIC_MOVE,
+        StandardCopyOption.REPLACE_EXISTING,
+    )
+    true
+}.getOrDefault(false)
+
+/** 原子写入实现。 */
+internal fun writeScheduleSnapshotAtomically(file: File, json: String) {
     synchronized(scheduleCacheWriteLock) {
         val temp = File(file.parentFile, "${file.name}.tmp")
         try {
             temp.writeText(json)
             // 原子替换，避免写一半崩溃留下损坏缓存。
-            var renamed = rename(temp, file)
+            var renamed = atomicReplace(temp, file)
             if (!renamed) {
                 for (attempt in 1..3) {
                     Thread.sleep(20)
-                    renamed = rename(temp, file)
+                    renamed = atomicReplace(temp, file)
                     if (renamed) break
                 }
             }

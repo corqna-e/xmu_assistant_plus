@@ -21,8 +21,7 @@ package com.xmu.assistant
  *exam_reminder_full_screen / notify_system / notify_pushplus /
  *pushplus_token / notify_qq_mail / qq_sender / qq_password /
  *qq_recipient / qq_ports / widget_enabled / manual_academic_week /
- *manual_academic_week_by_term / widget_worker_logged_in（登录态，
- *markLoginSucceeded 置 true / clearSession 置 false）
+ *manual_academic_week_by_term（登录态镜像不在这里，见第 4 条）
  * 2. exam_cache           【明文】ExamCache：考试安排多学期缓存（JSON 数组）。
  *键：terms（学期列表）/ term_<code>（各学期摘要）/ last_probe_epoch_millis
  *（学期窗口探测节流）。
@@ -55,7 +54,7 @@ package com.xmu.assistant
  * 登录态镜像拦截幽灵 CAS，见 4）。rollcall_seen 不清：去重集绑定归属账号
  * cookie 的 SHA-256 指纹（restoreSeenRollcalls 比对不符即整体失效），换号后
  * 新账号首启自愈重建，防误吞依赖键指纹而非登出清理。
- * widget_worker_logged_in / widget_logged_in 由写点直接置 false
+ * widget_logged_in 由写点直接置 false
  * （markLoginSucceeded/clearSession/clearLoggedOutUi），不参与「清理」语义。
  * 本表仅固化对照关系防误删/漏删；清理实现改动须同步本段。
  *
@@ -67,10 +66,9 @@ package com.xmu.assistant
  * 13. permission_audit      【明文】使用指南里「自启动已确认」的人工确认时间。
  * 14. map_usage_guard       【明文】地图选点每日次数闸门（纯本地限额，不含位置）。
  * 15. xmu_storage_flags     【明文】v112 Keystore 失效自愈的一次性提示标记。
- * 16. diagnostics           【明文】v112 诊断环形缓冲（解析失败记录，不含凭据）。
  */
 internal object PrefStores {
-    /** 登记锚：登记表命中的文件名必须与实际 getSharedPreferences 一致（测试守护）。 */
+    /** 登记锚：登记表里出现的文件名必须真有代码在用，改名/删除请同步本表。 */
     val fileNames: Set<String> = setOf(
         "xmu_assistant",
         "exam_cache",
@@ -87,8 +85,6 @@ internal object PrefStores {
         "permission_audit",
         "map_usage_guard",
         // 新增：Keystore 失效自愈的重置痕迹（明文，加密存储不可用时也要能写）
-        // 与诊断环形缓冲（解析失败记录，不含凭据）。
         "xmu_storage_flags",
-        "diagnostics",
     )
 }

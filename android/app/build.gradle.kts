@@ -27,7 +27,7 @@ android {
         targetSdk = 35
         // versionCode 仅作内部构建号，用于 dumpsys / adb install
         // 判断「装进去的是否为新包」，界面上不展示。
-        versionCode = 146
+        versionCode = 148
         versionName = "1.1"
         buildConfigField("boolean", "NETWORK_METRICS", "false")
     }

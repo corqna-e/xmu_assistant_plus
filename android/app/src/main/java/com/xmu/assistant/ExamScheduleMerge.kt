@@ -41,34 +41,6 @@ internal fun minutesToHhmm(minutes: Int): Int {
     return (clamped / 60) * 100 + (clamped % 60)
 }
 
-/**
- * 由课表条目推导「节次 → 时间窗口」。
- * 一门课跨 n 节时按节数均分时长（厦大每节约 50 分钟，误差可接受）；
- * 同一节次出现多个窗口时取最早开始、最晚结束。
- */
-internal fun sectionTimeWindows(entries: List<XmuScheduleEntry>): Map<Int, IntRange> {
-    val windows = mutableMapOf<Int, IntRange>()
-    entries.forEach { entry ->
-        val start = entry.startTime / 100 * 60 + entry.startTime % 100
-        val end = entry.endTime / 100 * 60 + entry.endTime % 100
-        if (end <= start) return@forEach
-        val count = (entry.endSection - entry.startSection + 1).coerceAtLeast(1)
-        val perSection = (end - start) / count
-        if (perSection <= 0) return@forEach
-        for (section in entry.startSection..entry.endSection) {
-            val sectionStart = start + (section - entry.startSection) * perSection
-            val sectionEnd = if (section == entry.endSection) end else sectionStart + perSection
-            val old = windows[section]
-            windows[section] = if (old == null) {
-                sectionStart..sectionEnd
-            } else {
-                minOf(old.first, sectionStart)..maxOf(old.last, sectionEnd)
-            }
-        }
-    }
-    return windows
-}
-
 /** 考试时间落在哪几节：与节次时间窗有重叠即占用；都不重叠时取时间最接近的一节。 */
 internal fun sectionsForExam(startMinute: Int, endMinute: Int, windows: Map<Int, IntRange>): IntRange? {
     if (windows.isEmpty()) return null

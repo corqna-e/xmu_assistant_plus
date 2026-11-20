@@ -237,8 +237,8 @@ class AssistantSettings private constructor(
 
     fun markLoginSucceeded() {
         autoLoginPolicy = AutoLoginPolicy.ENABLED
-        // 登录态镜像置 true：Widget 周期 worker 的 CAS 续登复核依据（见属性注释）
-        widgetWorkerLoggedIn = true
+        // 登录态镜像置 true：Widget 周期 worker 的 CAS 续登复核依据（见 writeWidgetLoggedInMirror）
+        writeWidgetLoggedInMirror(appContext, true)
     }
 
     fun markAutoLoginFailed() { autoLoginPolicy = AutoLoginPolicy.BLOCKED }
@@ -271,27 +271,6 @@ class AssistantSettings private constructor(
             .putInt("wait_before_answer_percent", settings.waitBeforeAnswerPercent.coerceIn(1, 100))
             .apply()
     }
-
-    /**
-     * 登录态镜像（布尔，非敏感）。写点：[markLoginSucceeded] → true、
-     * [clearSession] / clearLoggedOutUi → false。周期 Widget 刷新 worker 运行在
-     * 后台进程、读不到组合内存登录态，而凭据（学号/密码）按设计登出残留——
-     * worker 不复核登录态会以残留凭据发起教务 CAS 登录（登出后幽灵登录 =
-     * 风控暴露，同款守卫见 ScoreSectionState.refresh）。
-     *
-     *改为只存明文镜像。此前双写（加密 prefs + 明文镜像）是两次独立的
-     * apply()，进程在中间被杀会出现「渲染路径读到已登出、逻辑路径读到已登录」
-     * 的分叉。该值本身非敏感，也无迁移需求：镜像缺失时 worker 按「未知」处理。
-     */
-    var widgetWorkerLoggedIn: Boolean
-        get() = appContext.getSharedPreferences(WIDGET_MIRROR_PREFS, Context.MODE_PRIVATE)
-            .getBoolean(WIDGET_LOGGED_IN_MIRROR_KEY, true)
-        set(value) {
-            appContext.getSharedPreferences(WIDGET_MIRROR_PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putBoolean(WIDGET_LOGGED_IN_MIRROR_KEY, value)
-                .apply()
-        }
 
     /**
      *手动指定的教学周，**按学期分别存储**。
@@ -383,16 +362,36 @@ class AssistantSettings private constructor(
             .remove("monitor_last_error")
             .apply()
         // 会话终止（登出/恢复失败清理）：镜像置 false，Widget 周期 worker
-        // 绝不以残留凭据发起 CAS（登出后幽灵登录，见 widgetWorkerLoggedIn 注释）
-        widgetWorkerLoggedIn = false
+        // 绝不以残留凭据发起 CAS（登出后幽灵登录，见 writeWidgetLoggedInMirror 注释）
+        writeWidgetLoggedInMirror(appContext, false)
     }
 
     companion object {
-        internal fun forTest(context: Context, prefs: android.content.SharedPreferences): AssistantSettings =
-            AssistantSettings(context, prefs)
         /** 明文镜像 prefs 文件名与键名（布尔开关非敏感）。 */
         const val WIDGET_MIRROR_PREFS = "widget_mirror"
         const val WIDGET_LOGGED_IN_MIRROR_KEY = "widget_logged_in"
+
+        /**
+         * 登录态镜像唯一写入口（非敏感布尔，明文 prefs）。
+         *
+         * 写点：[markLoginSucceeded] → true；[clearSession] / clearLoggedOutUi → false。
+         * 周期 Widget 刷新 worker 运行在后台进程、读不到组合内存登录态，而凭据
+         * （学号/密码）按设计登出残留——worker 不复核登录态会以残留凭据发起教务
+         * CAS 登录（登出后幽灵登录 = 风控暴露，同款守卫见 ScoreSectionState.refresh）。
+         *
+         * 只存明文镜像，不再双写加密 prefs：此前两次独立的 apply()，进程在中间被杀
+         * 会出现「渲染路径读到已登出、逻辑路径读到已登录」的分叉。
+         *
+         * 不提供 Boolean getter：「缺键」必须能表示成未知，不能被某个默认值吞掉
+         * （这里以前有默认 true 的 getter，与注释正好相反）。
+         */
+        fun writeWidgetLoggedInMirror(context: Context, loggedIn: Boolean) {
+            context.applicationContext
+                .getSharedPreferences(WIDGET_MIRROR_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(WIDGET_LOGGED_IN_MIRROR_KEY, loggedIn)
+                .apply()
+        }
 
         /**
          * Widget 周期 worker 专用登录态读取（三态）：null = 键缺失（升级前旧装、

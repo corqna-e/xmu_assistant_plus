@@ -11,8 +11,13 @@ package com.xmu.assistant
  * 之前 用的默认作息（08:00-08:50 等）是估的，与官方表不符，本文件更正。
  */
 
-/** 官方作息时间表：节次 → 一日内的分钟窗口（起, 止）。 */
-internal fun officialSectionWindows(): Map<Int, IntRange> = mapOf(
+/**
+ * 官方作息时间表：节次 → 一日内的分钟窗口（起, 止）。
+ *
+ * 只构造一次：调课/搬课每次重算课程时间都要查表（见 scheduleSectionStartTime），
+ * 每次调用新建 Map 纯属浪费。
+ */
+private val OFFICIAL_SECTION_WINDOWS: Map<Int, IntRange> = mapOf(
     1 to (480..525),     // 08:00-08:45
     2 to (535..580),     // 08:55-09:40
     3 to (610..655),     // 10:10-10:55
@@ -25,6 +30,9 @@ internal fun officialSectionWindows(): Map<Int, IntRange> = mapOf(
     10 to (1205..1250),  // 20:05-20:50
     11 to (1260..1305),  // 21:00-21:45
 )
+
+/** 官方作息时间表（只读，调用方要改请自行 toMutableMap）。 */
+internal fun officialSectionWindows(): Map<Int, IntRange> = OFFICIAL_SECTION_WINDOWS
 
 /** 官方表与实测值允许的最大偏差（分钟）：超过则认为是特殊排课，不采信实测值。 */
 private const val SECTION_TIME_TOLERANCE_MINUTES = 60

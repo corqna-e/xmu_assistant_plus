@@ -48,11 +48,6 @@ internal class ScoreSectionState(
     private val setScoreUpdatedAtMillisPref: (Long) -> Unit,
     private val readRankCache: () -> String = { "" },
     private val writeRankCache: (String, () -> Boolean) -> Boolean = { _, _ -> true },
-    /** 客户端工厂注入（E2 行为测试用 fake transport；默认与原内联构造逐字等价）。 */
-    private val createScoreClient: (String, String, String, () -> Boolean) -> XmuScoreAutoQueryClient =
-        { accountUsername, accountPassword, cookie, mayRelogin ->
-            XmuScoreAutoQueryClient(accountUsername, accountPassword, cookie, mayRelogin = mayRelogin)
-        },
     scoreRecordsInitial: List<XmuScoreRecord> = emptyList(),
     scoreUpdatedAtMillisInitial: Long = 0L,
     private val persistenceDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -105,12 +100,13 @@ internal class ScoreSectionState(
         val accountPassword = password()
         val session = sessionEpoch.snapshot(sessionOwner, cookieHeader())
         // client 建在 scope 外（B1 收尾）：成功/失败分支都要回写续登后的 cookie，
-        // 原形态 client 建在 IO 协程内、跨 runCatching 边界；工厂化后构造零 IO，经闭包传入。
-        val client = createScoreClient(
-            accountUsername,
-            accountPassword,
-            scoreCookieHeader(),
-        ) { sessionEpoch.isCurrent(session) }
+        // 原形态 client 建在 IO 协程内、跨 runCatching 边界；构造零 IO，经闭包传入。
+        val client = XmuScoreAutoQueryClient(
+            username = accountUsername,
+            password = accountPassword,
+            cookieHeader = scoreCookieHeader(),
+            mayRelogin = { sessionEpoch.isCurrent(session) },
+        )
         scope.runModuleRequest(
             requestGate = requestGate,
             gateKey = "scores",

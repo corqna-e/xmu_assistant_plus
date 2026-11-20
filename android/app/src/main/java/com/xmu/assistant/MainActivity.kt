@@ -511,7 +511,7 @@ fun XmuAssistantApp(
         settings.scoreCookieHeader = ""
         // 登录态镜像同步置 false（本路径逐键清理、不走 clearSession）：Widget 周期
         // worker 不得以残留凭据发起 CAS（登出后幽灵登录，见 AssistantSettings）
-        settings.widgetWorkerLoggedIn = false
+        AssistantSettings.writeWidgetLoggedInMirror(activity, false)
         schedule.clearAll()
         // 已进入 setter 的课表后台任务也必须结束后，再最终清掉共享教务 cookie。
         settings.scoreCookieHeader = ""
@@ -728,7 +728,7 @@ fun XmuAssistantApp(
                                 invalidateMainSessionUi()
                                 // 恢复失败保留缓存 ≠ 仍在线：登录态镜像同步置 false，
                                 // Widget 周期 worker 不得以残留凭据 CAS（幽灵登录守卫）
-                                settings.widgetWorkerLoggedIn = false
+                                AssistantSettings.writeWidgetLoggedInMirror(activity, false)
                                 startupSessionReady = false
                             } else {
                                 settings.clearSession()

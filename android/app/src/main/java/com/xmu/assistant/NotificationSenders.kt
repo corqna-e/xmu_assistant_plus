@@ -21,15 +21,16 @@ fun rollcallNotificationBody(event: RollcallEvent, actionUrl: String): String {
     }.joinToString("\n")
 }
 
+/** PushPlus 推送端点（唯一生产地址）。 */
+private const val PUSHPLUS_ENDPOINT = "https://www.pushplus.plus/send"
+
 class PushPlusSender(
     private val token: String,
-    /** 端点注入（默认生产地址，行为零变化）：MockWebServer 行为测试用。 */
-    private val endpoint: String = "https://www.pushplus.plus/send",
 ) {
     fun send(title: String, body: String) {
         require(token.isNotBlank()) { "PushPlus token is empty" }
         val payload = """{"token":"${escapeJson(token)}","title":"${escapeJson(title)}","content":"${escapeJson(body)}","template":"txt"}"""
-        val conn = URL(endpoint).openConnection() as HttpURLConnection
+        val conn = URL(PUSHPLUS_ENDPOINT).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 8000

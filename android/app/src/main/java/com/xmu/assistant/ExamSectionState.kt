@@ -8,6 +8,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -49,11 +51,6 @@ internal class ExamSectionState(
     private val scoreCookieHeader: () -> String,
     private val setScoreCookieHeader: (String) -> Unit,
     private val reminderSettings: () -> ExamReminderSettings,
-    /** 客户端工厂注入（A2 行为测试用 fake transport；默认与原内联构造逐字等价）。 */
-    private val createExamClient: (String, String, String, () -> Boolean) -> XmuExamClient =
-        { accountUsername, accountPassword, cookie, mayRelogin ->
-            XmuExamClient(cookie, accountUsername, accountPassword, mayRelogin = mayRelogin)
-        },
     // null = 未指定（首次创建）：取缓存学期列表的第一个；显式空串（Saver 恢复无选择）保持空
     selectedTermInitial: String? = null,
     manuallySelectedInitial: Boolean = false,
@@ -97,6 +94,9 @@ internal class ExamSectionState(
     // 晚于登出清理落地的回填直接丢弃（防登出后旧缓存回灌界面）。
     private var stateGeneration = 0
 
+    /** 自定义考试落盘串行化锁（见 persistCustomExams）。 */
+    private val persistMutex = Mutex()
+
     init {
         // 构造期不再做主线程磁盘 IO：此前 loadTerms + loadTerm 在组合期间
         // 同步读 prefs；现改为 IO 线程读缓存、主线程回填（RollcallSectionState
@@ -107,13 +107,15 @@ internal class ExamSectionState(
             val restoredTerms = ExamCache.loadTerms(activity)
             val restoredTerm = selectedTermInitial ?: restoredTerms.firstOrNull().orEmpty()
             val restoredSummary = ExamCache.loadTerm(activity, restoredTerm)
-            val restoredCustom = CustomExamStore.load(activity)
+            val restoredCustom = CustomExamStore.loadResult(activity)
             withContext(Dispatchers.Main) {
                 if (stateGeneration != generationAtStart) return@withContext
                 if (validTerms.isEmpty()) validTerms = restoredTerms
                 if (selectedTerm.isBlank()) selectedTerm = restoredTerm
                 if (summary == null && selectedTerm == restoredTerm) summary = restoredSummary
-                if (customExams.isEmpty()) customExams = restoredCustom
+                if (customExams.isEmpty()) customExams = restoredCustom.exams
+                // 只有真损坏才提示一次，正常启动不打扰
+                if (restoredCustom.damaged) showWarning("自定义考试记录损坏，已尽量恢复")
             }
         }
     }
@@ -127,7 +129,7 @@ internal class ExamSectionState(
             customExams + exam
         }
         customExams = next
-        persistCustomExams(next)
+        persistCustomExams()
     }
 
     /**删除一条自定义考试。 */
@@ -135,12 +137,20 @@ internal class ExamSectionState(
         val next = customExams.filterNot { it.id == id }
         if (next.size == customExams.size) return
         customExams = next
-        persistCustomExams(next)
+        persistCustomExams()
     }
 
-    /** 落盘放在 IO 线程，避免主线程写文件。 */
-    private fun persistCustomExams(exams: List<CustomExam>) {
-        scope.launch(cacheDispatcher) { CustomExamStore.save(activity, exams) }
+    /**
+     * 落盘放在 IO 线程，避免主线程写文件。
+     *
+     * 用 [persistMutex] 串行化：连续两次保存会各起一个 IO 协程，不互斥时写操作交错，
+     * 后到的旧快照还可能覆盖新状态。锁内重读 [customExams] 而不是用调用时的快照，
+     * 因此无论谁先拿到锁，最终落盘的都是当前内存态。
+     */
+    private fun persistCustomExams() {
+        scope.launch(cacheDispatcher) {
+            persistMutex.withLock { CustomExamStore.save(activity, customExams) }
+        }
     }
 
     /** 学期条点击：立即复用缓存结果，后台悄悄检查变化；无缓存且已登录才拉取。 */
@@ -191,11 +201,12 @@ internal class ExamSectionState(
         session: SessionRequest,
         accountUsername: String,
         accountPassword: String,
-    ): XmuExamClient = createExamClient(
+    ): XmuExamClient = XmuExamClient(
+        ensureAcademicSession(),
         accountUsername,
         accountPassword,
-        ensureAcademicSession(),
-    ) { sessionEpoch.isCurrent(session) }
+        mayRelogin = { sessionEpoch.isCurrent(session) },
+    )
 
     /** 按当前设置重排考试提醒闹钟（幂等：先取消旧计划再排新计划）。
      *聚合所有已缓存学期的考试（跨学期提醒不丢）；执行挪到后台线程，不阻塞主线程。 */

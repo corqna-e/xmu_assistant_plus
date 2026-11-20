@@ -12,17 +12,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 课表取数注入点（ScheduleSectionState 的测试 seam）：默认实现见下方
- *fetchScheduleWithNetworkRetry，生产装配方不传，行为逐字不变。 */
-internal fun interface ScheduleFetcher {
-    suspend fun fetch(
-        username: String,
-        password: String,
-        scoreCookieHeader: String,
-        mayRelogin: () -> Boolean,
-    ): ScheduleRefreshResult
-}
-
 /**
  * 课表模块的独立分块：状态 + 动作（从 XmuAssistantApp 拆分，不引入 ViewModel）。
  *
@@ -61,20 +50,8 @@ internal class ScheduleSectionState(
     private val setStartupSessionReady: (Boolean) -> Unit,
     private val setPendingSessionRetry: (ModuleReadRetry) -> Unit,
     private val clearToast: () -> Unit,
-    /** 网络取数注入点（测试 seam，照 CoursewareSectionState.createCoursewareClient 范式）：
-     *默认值即正式实现 fetchScheduleWithNetworkRetry，生产装配方不传该参数，
-     *行为与加参数前逐字一致；测试借它注入会话过期/成功两种取数结果。
-     *用 fun interface 而非函数类型：Kotlin 函数类型调用不支持具名实参，
-     *而 mayRelogin = { sessionEpoch.isCurrent(session) } 这行是契约测试锚定的
-     *源码文本（自动续登必须挂在当前世代上），必须原样保留。 */
-    private val fetchSchedule: ScheduleFetcher = ScheduleFetcher { u, p, c, m ->
-        fetchScheduleWithNetworkRetry(u, p, c, m)
-    },
     snapshotInitial: XmuScheduleSnapshot = XmuScheduleSnapshot(),
     private val cacheDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val writeCacheSnapshot: (Activity, XmuScheduleSnapshot) -> Unit = { context, snapshot ->
-        saveScheduleSnapshotToFile(context, snapshot)
-    },
 ) {
     @Volatile private var stateGeneration = 0L
 
@@ -124,7 +101,7 @@ internal class ScheduleSectionState(
                     username() == accountUsername && password() == accountPassword
             },
             ioWork = {
-                fetchSchedule.fetch(
+                fetchScheduleWithNetworkRetry(
                     username = accountUsername,
                     password = accountPassword,
                     scoreCookieHeader = scoreCookieHeader(),
@@ -243,7 +220,7 @@ internal class ScheduleSectionState(
                 if (legacy.entries.isNotEmpty()) {
                     persistenceGate.persistIfLatest(revision) {
                         if (current()) {
-                            writeCacheSnapshot(activity, legacy)
+                            saveScheduleSnapshotToFile(activity, legacy)
                             // 写回后读回校验，确认文件缓存可用才清理旧版加密残留。
                             if (current() && loadScheduleSnapshotFromFile(activity).entries.isNotEmpty()) {
                                 settings.clearScheduleCacheLegacyPref()
@@ -310,7 +287,7 @@ internal class ScheduleSectionState(
         }
         scope.launch(cacheDispatcher) {
             persistenceGate.persistIfLatest(revision) {
-                if (sessionEpoch.isCurrent(session)) writeCacheSnapshot(context, snapshot)
+                if (sessionEpoch.isCurrent(session)) saveScheduleSnapshotToFile(context, snapshot)
             }
         }
     }

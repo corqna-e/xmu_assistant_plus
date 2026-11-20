@@ -450,32 +450,19 @@ internal fun applyScheduleOverride(group: XmuScheduleGroup, value: ScheduleCours
     )
 }
 
-internal fun scheduleSectionStartTime(section: Int, fallback: Int): Int = when (section) {
-    1 -> 800
-    2 -> 850
-    3 -> 1010
-    4 -> 1100
-    5 -> 1430
-    6 -> 1520
-    7 -> 1630
-    8 -> 1720
-    9 -> 1900
-    10 -> 1950
-    11 -> 2040
-    else -> fallback
-}
+/**
+ * 节次起始时间（HHMM 整数）。作息唯一来源是 [officialSectionWindows]，
+ * 不许再另起一张估算表——旧表（第 2 节 08:50、第 11 节 20:40 等）与厦大官方作息
+ * 差 5–20 分钟，调过课的课时间与「正在上课」判定都会跟着错。表外节次退回 fallback。
+ */
+/**
+ * 节次起始时间（HHMM 整数）。作息唯一来源是 [officialSectionWindows]，
+ * 不许再另起一张估算表——旧表（第 2 节 08:50、第 11 节 20:40 等）与厦大官方作息
+ * 差 5–20 分钟，调过课的课时间与「正在上课」判定都会跟着错。表外节次退回 fallback。
+ */
+internal fun scheduleSectionStartTime(section: Int, fallback: Int): Int =
+    officialSectionWindows()[section]?.let { minutesToHhmm(it.first) } ?: fallback
 
-internal fun scheduleSectionEndTime(section: Int, fallback: Int): Int = when (section) {
-    1 -> 845
-    2 -> 935
-    3 -> 1055
-    4 -> 1145
-    5 -> 1515
-    6 -> 1605
-    7 -> 1715
-    8 -> 1805
-    9 -> 1945
-    10 -> 2035
-    11 -> 2125
-    else -> fallback
-}
+/** 节次结束时间（HHMM 整数）。来源同上。 */
+internal fun scheduleSectionEndTime(section: Int, fallback: Int): Int =
+    officialSectionWindows()[section]?.let { minutesToHhmm(it.last) } ?: fallback

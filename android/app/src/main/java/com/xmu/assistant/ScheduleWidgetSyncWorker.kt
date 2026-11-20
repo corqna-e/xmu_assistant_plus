@@ -49,19 +49,7 @@ internal fun scheduleWidgetSyncSessionAllowed(
  * - 复用与手动刷新完全相同的取课表逻辑（fetchScheduleWithNetworkRetry），
  *失败由 WorkManager 指数退避重试。
  */
-internal class ScheduleWidgetSyncRun(
-    private val context: Context,
-    private val settingsFactory: () -> AssistantSettings = { AssistantSettings(context) },
-    private val fetchSchedule: ScheduleFetcher = ScheduleFetcher { u, p, c, mayRelogin ->
-        fetchScheduleWithNetworkRetry(u, p, c, mayRelogin)
-    },
-    private val writeSnapshot: (XmuScheduleSnapshot) -> Unit = { saveScheduleSnapshotToFile(context, it) },
-    private val writeCookie: (AssistantSettings, String) -> Unit = { settings, cookie -> settings.scoreCookieHeader = cookie },
-    private val updateWidget: (XmuScheduleSnapshot, Int) -> Unit = { snapshot, manualWeek ->
-        syncScheduleWidget(context, snapshot.entries, snapshot.termCode,
-            inferredCalendar = snapshot.inferredCalendars[snapshot.termCode], manualWeek = manualWeek)
-    },
-) {
+internal class ScheduleWidgetSyncRun(private val context: Context) {
     suspend fun execute(): Result {
         if (AppForegroundTracker.foreground) return Result.success()
         val workContext = currentCoroutineContext()
@@ -70,7 +58,7 @@ internal class ScheduleWidgetSyncRun(
         val generation = sessionEpoch.currentGeneration()
         val persistenceGate = ScheduleSectionState.sharedPersistenceGate()
         val revision = persistenceGate.currentRevision()
-        val settings = settingsFactory()
+        val settings = AssistantSettings(context)
         val fetchedUsername = settings.username
         val fetchedPassword = settings.password
         val fetchedMainCookie = settings.cookieHeader
@@ -94,7 +82,7 @@ internal class ScheduleWidgetSyncRun(
         if (!sessionAllowsSync()) return Result.success()
 
         return try {
-            val result = fetchSchedule.fetch(
+            val result = fetchScheduleWithNetworkRetry(
                 username = fetchedUsername,
                 password = fetchedPassword,
                 scoreCookieHeader = fetchedScoreCookie,
@@ -132,9 +120,11 @@ internal class ScheduleWidgetSyncRun(
                 workContext.ensureActive()
                 if (!sessionAllowsSync()) return@persistIfLatest
                 if (!persistenceGate.advanceIfCurrent(revision)) return@persistIfLatest
-                writeCookie(settings, result.jwCookie)
-                writeSnapshot(snapshot)
-                updateWidget(snapshot, settings.manualAcademicWeek(termCode))
+                settings.scoreCookieHeader = result.jwCookie
+                saveScheduleSnapshotToFile(context, snapshot)
+                syncScheduleWidget(context, snapshot.entries, snapshot.termCode,
+                    inferredCalendar = snapshot.inferredCalendars[snapshot.termCode],
+                    manualWeek = settings.manualAcademicWeek(termCode))
             }
             Result.success()
         } catch (error: kotlinx.coroutines.CancellationException) {

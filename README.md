@@ -75,7 +75,7 @@ xmu_assistant_plus/
 
 Android 端使用 Kotlin、Jetpack Compose、Material 3、OkHttp、WorkManager 与 AlarmManager。地图选点为自绘栅格瓦片，不依赖第三方地图 SDK；PDF 文字提取使用 PDFBox-Android。依赖版本以 [版本目录](android/gradle/libs.versions.toml) 为准，构建参数以 [应用构建配置](android/app/build.gradle.kts) 为准。
 
-仓库只分发可运行的安卓工程，不含测试代码、测试数据与构建脚本。发布时核对 `versionName` / `versionCode`、`assembleRelease` 结果与安装包签名，确保 `release/` 内安装包与源码同一次构建产出；文件名随 `versionName` 变化。
+仓库只分发可运行的安卓工程与必需的 Gradle 构建文件，不含测试代码与测试数据。发布时核对 `versionName` / `versionCode`、`assembleRelease` 结果与安装包签名，确保 `release/` 内安装包与源码同一次构建产出；文件名随 `versionName` 变化。
 
 ## 数据与隐私
 

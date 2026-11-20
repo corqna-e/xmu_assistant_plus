@@ -28,12 +28,12 @@ internal class RankSectionState(
     private val writeCache: (String, () -> Boolean) -> Boolean,
     private val show: (String) -> Unit,
     initialScores: List<XmuScoreRecord>,
-    private val clientFactory: (String, (String) -> String, () -> Boolean) -> XmuRankClient = { c, renew, active -> XmuRankClient(c, renew, active) },
-    /** 等待新记录的轮询节奏：没有可兜底的旧记录时要等满全部机会。可注入以便测试零延迟。 */
-    private val pollDelays: List<Long> = listOf(3000, 3000, 8000, 8000, 8000, 8000, 8000),
-    /** 已有可兜底记录时的缩短节奏：新记录多半不会到来，尽量少让用户干等。 */
-    private val fallbackPollDelays: List<Long> = listOf(3000, 5000, 8000),
 ) {
+    /** 等待新记录的轮询节奏：没有可兜底的旧记录时要等满全部机会。 */
+    private val pollDelays = listOf(3000L, 3000L, 8000L, 8000L, 8000L, 8000L, 8000L)
+
+    /** 已有可兜底记录时的缩短节奏：新记录多半不会到来，尽量少让用户干等。 */
+    private val fallbackPollDelays = listOf(3000L, 5000L, 8000L)
     var cache by mutableStateOf(rankCacheFromJson(readCache(), rankDigest(username())))
         private set
     var loading by mutableStateOf(false)
@@ -81,7 +81,7 @@ internal class RankSectionState(
         val stored = if (cache.owner == rankDigest(account)) cache else RankCache(rankDigest(account))
         val rangeId = selectedRange
         loading = true; stage = "正在准备"; error = ""
-        val client = clientFactory(academicCookie(), { old ->
+        val client = XmuRankClient(academicCookie(), { old ->
             XmuScoreAutoQueryClient(account, pass, old, mayRelogin = active).forceAcademicLogin()
         }, active)
         scope.launch(Dispatchers.Main) {

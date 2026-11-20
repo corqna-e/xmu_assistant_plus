@@ -87,10 +87,6 @@ internal class CoursewareSectionState(
     private val setAcademicCacheJson: (String) -> Unit,
     private val isSelectedCourse: (String) -> Boolean,
     private val setPendingSessionRetry: (ModuleReadRetry) -> Unit,
-    /** 客户端工厂注入（E2 行为测试用 fake transport；默认与原内联构造逐字等价）。 */
-    private val createCoursewareClient: (String) -> CoursewareClient = { cookie ->
-        CoursewareClient(activity, cookie)
-    },
 ) {
     var coursewareItems by mutableStateOf(emptyList<CoursewareUiItem>())
         private set
@@ -243,7 +239,7 @@ internal class CoursewareSectionState(
                     launch {
                         gate.withPermit {
                             runCatching {
-                                withContext(Dispatchers.IO) { createCoursewareClient(cookie).fetchCourseware(course.id) }
+                                withContext(Dispatchers.IO) { CoursewareClient(activity, cookie).fetchCourseware(course.id) }
                             }.onSuccess { list ->
                                 // 会话世代校验：登出/换号后不把旧账号课件写回缓存
                                 if (sessionEpoch.isCurrent(session)) {
@@ -288,7 +284,7 @@ internal class CoursewareSectionState(
             requestGate = requestGate,
             gateKey = gateKey,
             acceptsResult = { sessionEpoch.accepts(session, cookieHeader(), loggedIn()) },
-            ioWork = { createCoursewareClient(session.cookieHeader).fetchCourseware(course.id) },
+            ioWork = { CoursewareClient(activity, session.cookieHeader).fetchCourseware(course.id) },
             onResult = { result ->
                 result.onSuccess { list ->
                     refreshErrors = refreshErrors - course.id
@@ -411,7 +407,7 @@ internal class CoursewareSectionState(
         // 底部 busy ToastBar 也不再长期占位。
         scope.launch(Dispatchers.IO) {
             // 本批开始前先清掉过期断点残片（实测能堆到 72MB），再走正常下载。
-            runCatching { createCoursewareClient(sessionCookie).pruneStalePartials() }
+            runCatching { CoursewareClient(activity, sessionCookie).pruneStalePartials() }
             val skipped = AtomicInteger(0)
             try {
                 val files = AtomicInteger(0)
@@ -442,12 +438,12 @@ internal class CoursewareSectionState(
                         // 每项都用当下 Cookie 建客户端；会话过期再用最新 Cookie 重试一次。
                         val cookieNow = cookieHeader().ifBlank { sessionCookie }
                         val courseFolder = folderByCourse[item.courseId].orEmpty()
-                        val first = runCatching { createCoursewareClient(cookieNow).download(item, courseFolder) }
+                        val first = runCatching { CoursewareClient(activity, cookieNow).download(item, courseFolder) }
                         val outcome = if (first.exceptionOrNull() is MainSessionExpiredException) {
                             sessionExpired.set(true)
                             val fresh = cookieHeader()
                             if (fresh.isNotBlank() && fresh != cookieNow) {
-                                runCatching { createCoursewareClient(fresh).download(item, courseFolder) }
+                                runCatching { CoursewareClient(activity, fresh).download(item, courseFolder) }
                             } else first
                         } else first
                         outcome.onSuccess { result ->
