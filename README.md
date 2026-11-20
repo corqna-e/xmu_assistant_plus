@@ -121,9 +121,9 @@ Android 端使用 Kotlin、Jetpack Compose、Material 3、OkHttp、WorkManager �
 
 ## 版本与更新
 
-- 版本变化以 [Releases](https://github.com/corqna-e/xmu_assistant_plus/releases) 中的版本说明为准，每个版本附对应安装包与主要改动。
-- 自 v1.1 起不再维护 `差异清单.md`，仓库内该文件已冻结，仅供历史参考。
-- `release/` 只保留当前版本的安装包；旧版本从 Releases 获取。
+- 版本变化与对应安装包详见 [Releases](https://github.com/corqna-e/xmu_assistant_plus/releases) 。
+- `release/` 只保留当前版本的安装包。
+- 自 v1.1 起不再维护 `差异清单.md`，仅供历史参考，仓库内该文件已冻结。
 
 ## 致谢与许可
 
