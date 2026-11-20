@@ -61,14 +61,25 @@ const val WAIT_BEFORE_ANSWER_NONE = "none"
 const val WAIT_BEFORE_ANSWER_COUNT = "count"
 const val WAIT_BEFORE_ANSWER_PERCENT = "percent"
 
+/**
+ * 自动处理门槛是否已满足。
+ *
+ * 两种模式都只看名单条数与已签人数，不要求整份名单「可完整解析」：
+ * 平台对尚未签到的学生在明细里不给状态字段，整份名单会被判为不可靠，
+ * 若在这里要求 `reliablePercentage`，门槛就要等到全员签完才成立
+ * （表现为设 15 人签到后处理，实际到全班 40 人才处理）。
+ *
+ * 分母 `total` 即名单记录条数，未签学生同样在名单内，因此分母始终等于全班人数。
+ * 未解析出状态的行只计为 UNKNOWN、永不计入 present，所以放宽后不会提前触发。
+ */
 internal fun RollcallSettings.thresholdReached(progress: StudentRollcallProgress?): Boolean {
     if (waitBeforeAnswerMode == WAIT_BEFORE_ANSWER_NONE) return true
-    if (progress == null || !progress.reliablePercentage || progress.total <= 0) return false
+    if (progress == null || progress.total <= 0) return false
     return when (waitBeforeAnswerMode) {
         WAIT_BEFORE_ANSWER_COUNT -> progress.present >= waitBeforeAnswerCount.coerceAtLeast(1)
         WAIT_BEFORE_ANSWER_PERCENT ->
             progress.present.toLong() * 100L >=
-                progress.total.toLong() * waitBeforeAnswerPercent.coerceIn(1, 100).toLong()
+            progress.total.toLong() * waitBeforeAnswerPercent.coerceIn(1, 100).toLong()
         else -> false
     }
 }

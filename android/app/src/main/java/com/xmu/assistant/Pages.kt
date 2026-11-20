@@ -191,7 +191,7 @@ private fun CompactRollcallHistoryCard(
     onManageCoordinates: () -> Unit,
 ) {
     PreviewCard {
-        //缺勤/缺席/未到用红色标记；✕（U+2715）与 O 字形大小不一致，
+        // 缺勤/缺席/未到用红色标记；✕（U+2715）与 O 字形大小不一致，
         // 改成大写字母 X 并统一字号，两个符号视觉等大。
         val absent = item.ownStatus.trim() in setOf("缺勤", "缺席", "未到", "未签")
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -524,7 +524,7 @@ fun NotificationSettingsPage(
  * 做失效检测，**状态恢复路径不校验**——SaveableStateHolder 恢复出的旧值优先于 init，
  * 因此跨页面保留的本地副本会一直沿用旧值。策略页正是这种情况：首页改写了同一份
  * RollcallSettings 的自动签到开关，回到策略页仍是旧值，按「确认更改」就把刚开启的
- *自动签到静默写回（PageStateHost 后可达）。LaunchedEffect 在每次进入
+ * 自动签到静默写回（引入 PageStateHost 后可达）。LaunchedEffect 在每次进入
  * 组合时必跑，故用它重同步；值未变时写入同值不触发重组。
  */
 @Composable

@@ -20,11 +20,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 
 /**
- * 隐私模式：
+ * 隐私模式（重做）：
  *
  * 1. 屏幕顶部大标题（[BrandHeader] 的标题）在二三级页逐字换成随机字母，
  *字母个数等于原标题字数（「课表」→ 两个随机字母）；一级页不遮蔽，首页显示「首页」。
- *该行为可在规则弹窗里单独关闭（[PrivacyModeState.titleMasked]）；
+ *该行为可在规则弹窗里单独关闭（[PrivacyModeState.titleMasked]，v108）；
  * 2. 全 App 任意位置的敏感词按 [PRIVACY_SUBSTITUTIONS] 换词（签到 → 前导、成绩 → 乘积、
  *监控 → 查看、雷达 → 类沓、考试 → 测评、考场 → 地点、排名 → 座位、绩点 → 机电、课 → ？），
  *桌面小组件（RemoteViews）不在范围内；
@@ -167,7 +167,7 @@ private const val TITLE_LETTER_COUNT = 26
  * 顶部大标题取值：隐私模式开启、且标题替换开关未关时，逐字符换成随机字母，
  * 字母个数等于原标题字数（空白保留）；否则原样返回。
  *
- *随机源用 `title.hashCode` 做种子：同一标题每次重组、每次重启都得到同一串字母，
+ * 随机源用 `title.hashCode()` 做种子：同一标题每次重组、每次重启都得到同一串字母，
  * 否则页面一滚动字母就跳变，看着像故障。
  */
 fun privacyTitle(title: String, privacy: Boolean): String {

@@ -170,7 +170,7 @@ fun formatXmuTime(value: Int): String {
 /**
  * 自动监控时段自查：当前时间是否在今天任一课程的 [开始-30 分钟, 结束+30 分钟] 窗口内。
  *
- *两点修正：
+ *修正：
  * - 旧实现把「今天没有课」当作放行（返回 true），于是周末、没课的日子全天都在轮询；
  * - 判定用的课表数据取自 `scheduleCacheJson`（旧版加密 prefs），而课表现在存在文件缓存里，
  *那个字段恒为空 → 直接短路放行，开关等于没有。
@@ -198,10 +198,8 @@ internal fun autoMonitorWindowActive(
 /** 兼容旧调用/测试的 JSON 入口：解析失败或空串视为「无课表数据」，放行。 */
 internal fun autoMonitorWindowActive(scheduleJson: String, weekday: Int, nowMinuteOfDay: Int): Boolean {
     if (scheduleJson.isBlank()) return true
-    val snapshot = runCatching { xmuScheduleSnapshotFromJson(scheduleJson) }.getOrElse { error ->
-        Diagnostics.record("课表", error, "监控窗口判断读课表缓存")
-        null
-    } ?: return true
+    val snapshot = runCatching { xmuScheduleSnapshotFromJson(scheduleJson) }.getOrNull()
+        ?: return true
     return autoMonitorWindowActive(snapshot, weekday, nowMinuteOfDay)
 }
 

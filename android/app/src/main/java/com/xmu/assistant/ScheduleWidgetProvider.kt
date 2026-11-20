@@ -69,6 +69,8 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                 }
                 manager.updateAppWidget(id, views)
             }
+            // 与周课表组件共用同一份「已渲染深浅色」，两者同属一套主题。
+            WidgetThemeState.setRenderedDark(context, widgetDark(context))
         }
     }
 }

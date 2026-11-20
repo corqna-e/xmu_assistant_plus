@@ -31,7 +31,7 @@ internal object ScheduleWeekWidgetData {
     /**用户正在查看的周次；0 = 跟随当前周。 */
     private const val KEY_VIEW_WEEK = "view_week"
     /**
-     *同步时算出的「当前教学周」。
+     * 同步时算出的「当前教学周」。
      * 之前靠 mondayEpochDay 与今天所在周一比对反推当前周，学期日历有偏差时会整体匹配不上，
      * 兜底落到「最后一周」，桌面小卡片因此变空白。改为同步时直接落库。
      */
@@ -43,15 +43,28 @@ internal object ScheduleWeekWidgetData {
             .apply()
     }
 
-    /**一次写入整学期所有周；保留旧的 KEY_JSON 兼容老代码路径。 */
-    fun saveBundle(context: Context, snapshots: List<ScheduleWeekWidgetSnapshot>, currentWeek: Int) {
+    /**
+     * 一次写入整学期所有周；保留旧的 KEY_JSON 兼容老代码路径。
+     *
+     * [resetViewWeek]：联网同步（新课表）时归零，让桌面回到「跟随当前周」；
+     * 本地调课 / 组件刷新这类局部改动传 false —— 用户正翻在第 N 周看课，
+     * 顺手改一条就被弹回本周会很别扭。
+     */
+    fun saveBundle(
+        context: Context,
+        snapshots: List<ScheduleWeekWidgetSnapshot>,
+        currentWeek: Int,
+        resetViewWeek: Boolean = true,
+    ) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val current = snapshots.firstOrNull { it.week == currentWeek } ?: snapshots.firstOrNull()
         prefs.edit()
             .putString(KEY_BUNDLE, JSONArray(snapshots.map(::encode)).toString())
             .putInt(KEY_CURRENT_WEEK, currentWeek)
             // 数据刷新后回到「跟随当前周」，避免上次翻到第 N 周的状态残留。
-            .putInt(KEY_VIEW_WEEK, 0)
+            .apply {
+                if (resetViewWeek) putInt(KEY_VIEW_WEEK, 0)
+            }
             .apply {
                 if (current != null) putString(KEY_JSON, encode(current).toString())
             }

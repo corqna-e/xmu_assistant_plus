@@ -20,11 +20,12 @@
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
     <!--开机/应用更新后按既有开关恢复监控（BootReceiver，异常一律降级） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!--地图选点：加载自绘瓦片需要网络与网络状态；不申请后台定位 -->
+    <!--高德地图 SDK（仅地图选点）：加载底图需要网络与网络状态；不申请后台定位 -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <application
+        android:name=".XmuAssistantApp"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
         android:icon="@mipmap/ic_launcher"

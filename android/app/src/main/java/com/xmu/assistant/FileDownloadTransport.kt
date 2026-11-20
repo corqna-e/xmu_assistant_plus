@@ -72,7 +72,7 @@ internal class OkHttpFileDownloadTransport(
                     // 避免会话凭据外泄给第三方（OkHttp 自动重定向会保留手动 Cookie 头）。
                     // 注意：必须比较 scheme（https→http 降级同 host 也算跨源，防凭据随明文外发）；
                     // 端口需按协议默认端口归一化（https://host 与 https://host:443 是同源，
-                    //URL.getPort 对未显式端口返回 -1，直接比较会误判跨源剥掉 Cookie 导致 401）。
+                    // URL.getPort() 对未显式端口返回 -1，直接比较会误判跨源剥掉 Cookie 导致 401）。
                     if (!nextUrl.protocol.equals(currentUrlObj.protocol, ignoreCase = true) ||
                         !nextUrl.host.equals(currentUrlObj.host, ignoreCase = true) ||
                         nextUrl.effectivePort() != currentUrlObj.effectivePort()

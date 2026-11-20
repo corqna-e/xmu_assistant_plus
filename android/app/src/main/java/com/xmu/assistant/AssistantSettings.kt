@@ -11,6 +11,9 @@ const val THEME_MODE_LIGHT = "light"
 /** 外观主题模式常量：强制深色。 */
 const val THEME_MODE_DARK = "dark"
 
+/** 故障转移提醒的已提醒记录上限（同一场签到只提醒一次，历史只留最近若干条）。 */
+const val ROLLCALL_FAILOVER_HISTORY = 50
+
 /**
  * 加密设置存储。内部对 EncryptedSharedPreferences 做进程级单例缓存：
  * MasterKey 构建与加密 prefs 初始化较慢（每次实例化都重建），
@@ -145,7 +148,7 @@ class AssistantSettings private constructor(
 
     /**
      * 隐私模式的自定义换词规则（JSON，见 [decodePrivacyRules]）。
-     *空串 = 用默认词表（「课」默认不替换，故换了新键，避免旧存档把默认值压回去）；用户在外观页逐条开关/改词后写入。属于显示偏好，非敏感数据。
+     * 空串 = 用默认词表（「课」默认不替换，故换了新键，避免旧存档把默认值压回去）；用户在外观页逐条开关/改词后写入。属于显示偏好，非敏感数据。
      */
     var privacyRules: String
         get() = prefs.getString("privacy_rules_v2", "") ?: ""
@@ -173,6 +176,33 @@ class AssistantSettings private constructor(
     var examReminderFullScreen: Boolean
         get() = prefs.getBoolean("exam_reminder_full_screen", false)
         set(value) = prefs.edit().putBoolean("exam_reminder_full_screen", value).apply()
+
+    /**
+     * 自动签到故障转移：自动流程放弃（提交失败达上限 / 本人状态无法判定）时，
+     * 是否用全屏提醒要求人工确认（默认开）。关闭后只发普通高优先级通知。
+     */
+    var rollcallFailoverFullScreen: Boolean
+        get() = prefs.getBoolean("rollcall_failover_full_screen", true)
+        set(value) = prefs.edit().putBoolean("rollcall_failover_full_screen", value).apply()
+
+    /** 已发过故障转移提醒的签到 id（同一场签到只提醒一次）。 */
+    fun rollcallFailoverNotified(): Set<String> = runCatching {
+        val raw = prefs.getString("rollcall_failover_notified", "") ?: ""
+        if (raw.isBlank()) emptySet() else {
+            val array = org.json.JSONArray(raw)
+            buildSet { for (i in 0 until array.length()) array.optString(i).takeIf { it.isNotBlank() }?.let(::add) }
+        }
+    }.getOrDefault(emptySet())
+
+    /** 记录一次故障转移提醒；只保留最近 [ROLLCALL_FAILOVER_HISTORY] 条，避免无限增长。 */
+    fun markRollcallFailoverNotified(eventId: String) {
+        if (eventId.isBlank()) return
+        val kept = (rollcallFailoverNotified() - eventId).toMutableList()
+        kept += eventId
+        val trimmed = kept.takeLast(ROLLCALL_FAILOVER_HISTORY)
+        val array = org.json.JSONArray().also { target -> trimmed.forEach(target::put) }
+        prefs.edit().putString("rollcall_failover_notified", array.toString()).apply()
+    }
 
     var monitorDesired: Boolean
         get() = prefs.getBoolean("monitor_desired", false)
@@ -250,7 +280,7 @@ class AssistantSettings private constructor(
      * 风控暴露，同款守卫见 ScoreSectionState.refresh）。
      *
      *改为只存明文镜像。此前双写（加密 prefs + 明文镜像）是两次独立的
-     *apply，进程在中间被杀会出现「渲染路径读到已登出、逻辑路径读到已登录」
+     * apply()，进程在中间被杀会出现「渲染路径读到已登出、逻辑路径读到已登录」
      * 的分叉。该值本身非敏感，也无迁移需求：镜像缺失时 worker 按「未知」处理。
      */
     var widgetWorkerLoggedIn: Boolean

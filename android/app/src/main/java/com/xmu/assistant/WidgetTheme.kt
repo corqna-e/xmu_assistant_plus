@@ -25,6 +25,52 @@ internal fun widgetDark(context: Context): Boolean {
     }
 }
 
+/**
+ * 上一次真正画进桌面的深浅色。
+ *
+ * 组件颜色是逐控件写死的，系统切深色时桌面只会重新 inflate 布局、不会重跑我们这段构建，
+ * 所以必须在 App 进程里自己察觉并重投。记下「已渲染的深浅色」用来判重：
+ * 字体大小、语言、旋转同样会发 CONFIGURATION_CHANGED，颜色没变就不该白重画一遍。
+ * 与组件快照共用同一个偏好文件，方便随组件数据一起管理。
+ */
+internal object WidgetThemeState {
+    private const val PREFS = "schedule_week_widget"
+    private const val KEY_DARK = "rendered_dark"
+
+    /** null 表示本机还没渲染过（首次安装 / 清过数据）。 */
+    fun renderedDark(context: Context): Boolean? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!prefs.contains(KEY_DARK)) return null
+        return prefs.getBoolean(KEY_DARK, false)
+    }
+
+    fun setRenderedDark(context: Context, dark: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_DARK, dark).apply()
+    }
+}
+
+/**
+ * 按当前主题重画两个桌面组件（只重绘，不重算数据）。
+ *
+ * 深浅色变化时用它可以立刻换肤：组件快照里的课程数据一个字节都不用动。
+ */
+internal fun redrawScheduleWidgetsForTheme(context: Context) {
+    val appContext = context.applicationContext
+    WidgetThemeState.setRenderedDark(appContext, widgetDark(appContext))
+    ScheduleWidgetProvider.refreshAll(appContext)
+    ScheduleWeekWidgetProvider.refreshAll(appContext)
+}
+
+/** 深浅色实际变了才重画；同色（字体大小 / 语言 / 旋转）直接返回。 */
+internal fun refreshWidgetsIfThemeChanged(context: Context) {
+    val appContext = context.applicationContext
+    val dark = widgetDark(appContext)
+    if (WidgetThemeState.renderedDark(appContext) == dark) return
+    redrawScheduleWidgetsForTheme(appContext)
+}
+
+
 /** 一张卡片需要的全部主题资源：颜色是 ARGB，资源项是 drawable id。 */
 internal data class WidgetPalette(
     val accent: Int,

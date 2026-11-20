@@ -4,7 +4,7 @@
      整张课表改为**原生控件 + 权重分配**，不再用 Canvas 画位图。
      原因：位图必须知道卡片的确切像素尺寸才能 1:1 铺满，而桌面只肯报一个 min/max 区间
      （本机报 206/284，实际卡片比两者都高），位图比例一旦对不上，fitCenter 就在一侧留白、
-     fitXY 就把字拉变形 —— 位图方案因此不可行。
+     fitXY 就把字拉变形 —— 这是 v69~v73 反复失败的根因。
 
      现在的做法：11 个节次的格子用 layout_weight=1 等分高度，7 个星期用 layout_weight=1
      等分宽度，课程块按「跨几个节次」取对应权重的布局。高度和宽度全由容器分配，
@@ -383,7 +383,7 @@
             android:layout_height="match_parent"
             android:orientation="horizontal">
 
-            <!-- 左侧节次列：每格「节号 + 起始时间」两行。
+            <!-- 左侧节次列：每格「节号 + 起始时间」两行（恢复）。
                  11 格 height=0dp + weight=1，与右侧 7 列的空格子逐行对齐。 -->
             <LinearLayout
                 android:layout_width="28dp"

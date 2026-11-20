@@ -15,7 +15,7 @@ import java.util.Locale
  * - form urlEncode/post 编码（exam/schedule 同款 plain-URLEncoder 口径；score 的
  *encodeFormComponent 带 `*`→%2A 语义不同，保留在其客户端内不并入）。
  *
- * 网络口径红线：超时/UA/Referer/header 集/并发参数一律原值透传，本基座不改变任何
+ * 网络口径约束：超时/UA/Referer/header 集/并发参数一律原值透传，本基座不改变任何
  * 请求形态；异常类型由各客户端经 onLoginTerminus/onExhaustedNonLogin/networkWrapper
  * 注入原样工厂，不让异常语义跨模块串味。
  */
@@ -197,7 +197,7 @@ internal object JwSessionMarkers {
 
     /**
      * 登录页/身份域响应判定（401/403 状态码由各客户端薄封装补上）。
-     * 红线约束：合并只是消除三处实现漂移的可能，判定结果与各客户端
+     * 约束：合并只是消除三处实现漂移的可能，判定结果与各客户端
      * 改动前在其自有测试中的行为逐一一致——条件与清单逐字未动。
      */
     fun isAcademicLoginResponse(response: QueryHttpResponse): Boolean {
@@ -212,7 +212,7 @@ internal object JwSessionMarkers {
 
     /**
      * 401/403 + 登录页复合会话失效判定（exam/schedule 原两处薄封装逐字等价合并）。
-     * 红线：仅消除两处复写的漂移面，条件本体（状态码集合 + 登录页分类器）逐字未动；
+     * 约束：仅消除两处复写的漂移面，条件本体（状态码集合 + 登录页分类器）逐字未动；
      * score 的 isScoreSessionExpired 是独立判定面，冻结不并入。
      */
     fun isAuthFailure(code: Int, response: QueryHttpResponse): Boolean =

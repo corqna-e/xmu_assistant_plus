@@ -72,7 +72,7 @@ import kotlin.math.sinh
  *地图选点改为自绘瓦片，彻底不依赖高德 SDK。
  *
  * 背景：轻量版 SDK 内置的 JS API Key 已被高德判 INVALID_USER_KEY（CDP 抓到的
- *`<AMap JSAPI> KEY异常`），官方没有修复版，`MapsInitializer.setApiKey` 写入的
+ * `<AMap JSAPI> KEY异常`），官方没有修复版，`MapsInitializer.setApiKey()` 写入的
  * Android 平台 Key 也进不了 JS 层。与其继续和黑盒较劲，不如直接用公开瓦片：
  * 零 Key、零 SDK、零鉴权往返，首次出图也只有一次 PNG 请求。
  *
@@ -97,7 +97,7 @@ private const val RETRY_COOLDOWN_MS = 4000L
 /** 注记层瓦片在缓存里的 key 前缀，与底图 key 区分。 */
 private const val LABEL_PREFIX = "L/"
 /**
- * 是否叠加 style=8 中文注记层。默认不叠加（「无字版」）：该层把灰字、
+ * 是否叠加 style=8 中文注记层。回到「无字版」：该层把灰字、
  * 棕路名、橙字餐饮、白字黑框楼栋名全烧在一张 PNG 里，样式互相打架且和高德 App
  * 不一致。底图(scl=2&style=7)本身完全不含文字，关掉后地图只剩道路/绿地/建筑轮廓。
  * 注记层加载与绘制逻辑全部保留，把这里改回 true 即可恢复带地名版本。
@@ -137,9 +137,9 @@ private fun isBlankTile(b: Bitmap): Boolean {
 internal class TileMapView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val pool = Executors.newFixedThreadPool(6) { r -> Thread(r).apply { isDaemon = true } }
-    //按真实内存计。原来设 8MB 只有 32 张，而这台机一屏要 40+ 张，
+    // 按真实内存计。原来设 8MB 只有 32 张，而这台机一屏要 40+ 张，
     // LruCache 会反复淘汰「最早被 get 的」顶部瓦片，下一帧又重新下载 —— 就是「上方瓦片一直在刷」。
-    //多了注记层后一屏约 80 张位图（约 20MB），缓存提到 48MB 才不会抖动。
+    // 多了注记层后一屏约 80 张位图（约 20MB），缓存提到 48MB 才不会抖动。
     private val cache = object : LruCache<String, Bitmap>(48 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
     }
@@ -420,7 +420,7 @@ internal class TileMapView(context: Context) : View(context) {
 
     private fun loadTile(z: Int, x: Int, y: Int, key: String) {
         synchronized(pending) { if (!pending.add(key)) return }
-        //scl=2 会返回 512×512 高分瓦片，且 z=19/20 仍有真实内容
+        // scl=2 会返回 512×512 高分瓦片，且 z=19/20 仍有真实内容
         // （scl=1 到 z=19 就基本是空白图了）。z=21 起服务器一律返回空白，所以 MAX_ZOOM=20。
         val server = (x + y) % 4 + 1
         val url = "https://wprd0$server.is.autonavi.com/appmaptile" +
@@ -549,7 +549,7 @@ private fun Context.findHostActivity(): Activity? {
 }
 
 /**
- * 全屏选点对话框。窗口几何与底部 48dp 留白按真机实际行为处理
+ * 全屏选点对话框。窗口几何与底部 48dp 留白沿用 已真机验证过的写法
  * （这台荣耀的 getRootWindowInsets 会返回 bottom=0，不能只靠系统 inset）。
  */
 @Composable

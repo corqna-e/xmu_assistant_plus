@@ -14,7 +14,7 @@ import org.json.JSONObject
 /**
  *小组件「点一下弹二级界面」——**在组件内部绘制**，不启动任何 Activity / 界面。
  *
- * 不用透明主题 Activity 承载这张卡片：那样会切应用、盖住桌面，
+ * 曾用透明主题 Activity 承载这张卡片，用户明确否掉：那样会切应用、盖住桌面，
  * 本质仍是「打开 App」。现在改为 RemoteViews 覆盖层：
  *
  *1. 两个组件的主布局根都是 FrameLayout，第二层是一张默认 `gone` 的详情覆盖层；
@@ -135,13 +135,13 @@ internal object WidgetDetailOverlay {
      * 真机已确认：荣耀桌面在 ACTION_DOWN/UP 会对整个 AppWidgetHostView 播一次缩放回弹，
      * 点组件空白区（App 完全不响应）照样播，与我们的重绘、覆盖层、PendingIntent 类型都无关。
      * 既然动效改不掉，就把弹窗推迟到动效播完：卡片已经静止，遮罩和详情卡就不会跟着一起
-     * 被「按进去」再弹出来。0.5s 是设定时长。
+     * 被「按进去」再弹出来。0.5s 是的时长。
      *
      * 收起（HIDE）不延迟，否则关闭会显得迟钝；关闭同时取消尚未执行的 SHOW，
      * 避免 0.5s 后弹窗又自己冒出来。两个组件按 source 各自排队，互不取消。
      *
      * BroadcastReceiver 在 onReceive 返回后随时可能被回收，所以 SHOW 分支由调用方
-     *`goAsync` 取一个 PendingResult，这里在延迟任务执行完（或被取消）后才 finish。
+     * `goAsync()` 取一个 PendingResult，这里在延迟任务执行完（或被取消）后才 finish。
      */
     const val SHOW_DELAY_MS = 500L
 
@@ -155,7 +155,7 @@ internal object WidgetDetailOverlay {
     /** 按组件来源排队：今日与周课表同时挂桌面时，一个组件的点击不会取消另一个。 */
     private val pendingShows = HashMap<String, DeferredShow>()
 
-    /**这条广播是否需要调用方用 goAsync 撑住进程。 */
+    /** 这条广播是否需要调用方用 goAsync() 撑住进程。 */
     fun isDeferredShow(intent: Intent): Boolean = intent.action == ACTION_SHOW
 
     @Synchronized

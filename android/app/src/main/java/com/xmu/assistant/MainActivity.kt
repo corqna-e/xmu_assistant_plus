@@ -61,8 +61,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 诊断环形缓冲需要一个进程级 context 才能落盘（后台 worker 也会写）。
-        Diagnostics.install(this)
         openedEventId = intent.data?.lastPathSegment.orEmpty()
         openedPage = intent.getStringExtra("open_page").orEmpty()
         openedScheduleView = intent.getStringExtra("open_schedule_view").orEmpty()
@@ -72,7 +70,7 @@ class MainActivity : ComponentActivity() {
         // 同协程内顺带：
         // 1) 预热加密设置（MasterKey+EncryptedSharedPreferences 构建较慢），与组合期首次访问竞速；
         // 2) 教务会话保温——单请求探测既有教务 Cookie（滑动过期机制下保持热态），
-        //减少用户打开成绩/课表页时的完整 CAS 认证链。绝不自动续登（mayRelogin 恒 false）。
+        //    减少用户打开成绩/课表页时的完整 CAS 认证链。绝不自动续登（mayRelogin 恒 false）。
         lifecycleScope.launch(Dispatchers.IO) {
             val warmSettings = runCatching { AssistantSettings(this@MainActivity) }.getOrNull()
             ScheduleWidgetSyncWorker.scheduleDaily(applicationContext)
@@ -114,6 +112,9 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         AppForegroundTracker.foreground = true
+        // 进程若在系统切深色时已被回收，CONFIGURATION_CHANGED 收不到；
+        // 回到前台补一次判重，保证桌面上这张卡片和当前外观一致。
+        runCatching { refreshWidgetsIfThemeChanged(this) }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -289,7 +290,7 @@ fun XmuAssistantApp(
         PrivacyModeState.enabled
     }
 
-    //toastSeq：相同文案连续 show 时值不变、旧计时器不重启会把「新」toast 提前清掉，
+    // toastSeq：相同文案连续 show() 时值不变、旧计时器不重启会把「新」toast 提前清掉，
     // 用递增序号作 effect key 保证每次 show 都重新计时
     var toastSeq by remember { mutableStateOf(0L) }
 
@@ -336,9 +337,9 @@ fun XmuAssistantApp(
     // 权限时会谎报 pin 成功、实际静默失败，校验失败后引导用户去应用设置开启权限。
     var widgetPermissionGuideOpen by remember { mutableStateOf(false) }
 
-    //瞬时提示自动消退：toast 是页面底部内嵌横幅，此前只有切页/下一次 show 才清除，
+    // 瞬时提示自动消退：toast 是页面底部内嵌横幅，此前只有切页/下一次 show() 才清除，
     // "正在刷新，请稍候""已读取 N 门"这类提示会一直挂着。
-    //3 秒后自动清空；以 toastSeq 为 key：新一轮 show（含同文案）取消旧计时并重新计时。
+    // 3 秒后自动清空；以 toastSeq 为 key：新一轮 show()（含同文案）取消旧计时并重新计时。
     // 4 秒，3 秒对带操作提示的文案偏短。
     LaunchedEffect(toastSeq) {
         if (toast.isNotBlank()) {
@@ -739,7 +740,7 @@ fun XmuAssistantApp(
                         }
                     } finally {
                         recovery.finishAutoLogin(recoveryToken)
-                        //与成功分支对齐：无条件复位。此前依赖 busy.isBlank 才复位，
+                        // 与成功分支对齐：无条件复位。此前依赖 busy.isBlank() 才复位，
                         // 而调用方（recoverExpiredModule/startStartupSessionRecovery）进入前
                         // 已把 busy 置为非空，accept 校验不通过时 flag 永不复位 → 首页按钮死锁。
                         accountTransitionInProgress = false
@@ -832,8 +833,8 @@ fun XmuAssistantApp(
         // 对课表做 TronClass 登录无效，只会白白多打一次登录（风控隐患）。
         // 课表恢复直接刷新即可：fetchScheduleWithNetworkRetry 内部会经
         // ensureScheduleSession（用 settings.scoreCookieHeader）自动补 CAS 会话。
-        //注意：此处不能调用 invalidateMainSessionUi——它会清空内存 cookieHeader，
-        //导致 refreshSchedule 的 requireLogin 直接拦截，恢复流程根本跑不到。
+        // 注意：此处不能调用 invalidateMainSessionUi()——它会清空内存 cookieHeader，
+        // 导致 refreshSchedule 的 requireLogin() 直接拦截，恢复流程根本跑不到。
         if (retry.request == ModuleReadRequest.SCHEDULE) {
             startupSessionReady = false
             sessionEpoch.invalidate(sessionOwner)
@@ -895,7 +896,7 @@ fun XmuAssistantApp(
     }
 
     fun onModuleEntered(targetPage: Page) {
-        //进入设置下的下一级界面时记录来源页。只在外层页面进入时记录 ——
+        // 进入设置下的下一级界面时记录来源页。只在外层页面进入时记录 ——
         // 从它自己的下一级界面（添加地点 / 现场采点）回到本页时，不覆盖原来源。
         if (targetPage in nestedSettingPages && page !in nestedSettingPages &&
             page !in nestedSettingChildPages
@@ -921,14 +922,14 @@ fun XmuAssistantApp(
         else -> parentPage(page)
     }
 
-    //—— 每次进入客户端（冷启动 / 从后台回到前台）全量刷新一次，45 分钟节流 ——
+    // —— 每次进入客户端（冷启动 / 从后台回到前台）全量刷新一次，45 分钟节流 ——
     // 「进入客户端自动刷新所有界面数据，进入单页面就不自动刷新」。
     // 串行错峰 800ms：多模块同时发起 academic CAS 续登会打两个身份域。
-    // 「第一次登录不自动刷新」的两处根因：
-    //1) 旧节流用 SystemClock.elapsedRealtime，进程重启会归零，而 rememberSaveable
-    //里存的是上个进程的大数 → now-last 为负 → 被误判成「刚刷过」，冷启动直接跳过；
-    //2) 旧 LaunchedEffect 只在 loggedIn 变化时跑一次，那一刻往往仍在
-    //accountTransitionInProgress / cookie 尚未写好，函数开头直接 return，之后再无触发。
+    // 修复「第一次登录不自动刷新」两处根因：
+    //  1) 旧节流用 SystemClock.elapsedRealtime()，进程重启会归零，而 rememberSaveable
+    //     里存的是上个进程的大数 → now-last 为负 → 被误判成「刚刷过」，冷启动直接跳过；
+    //  2) 旧 LaunchedEffect 只在 loggedIn 变化时跑一次，那一刻往往仍在
+    //     accountTransitionInProgress / cookie 尚未写好，函数开头直接 return，之后再无触发。
     // 现在改用墙钟 + 登录态上升沿强制刷一次，并把「会话可用」纳入 effect key。
     var lastFullRefreshMillis by rememberSaveable { mutableStateOf(0L) }
     var fullRefreshInFlight by remember { mutableStateOf(false) }

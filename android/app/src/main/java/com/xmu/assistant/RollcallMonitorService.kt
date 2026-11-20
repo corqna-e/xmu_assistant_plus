@@ -248,6 +248,8 @@ class RollcallMonitorService : Service() {
                             settingsStillCurrent = {
                                 settings.cookieHeader == cookieSnapshot && settings.rollcall() == rollcallSettings
                             },
+                            // 故障转移：自动流程放弃时弹需手动确认提醒（同一场只弹一次）。
+                            onFailover = { event, reason -> notifyFailover(event, reason) },
                         )
                     } finally {
                         while (answerAttempts.size > MAX_ANSWER_ATTEMPTS_TRACKED) {
@@ -338,6 +340,10 @@ class RollcallMonitorService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(REMINDER_CHANNEL_ID, "虾大助手Plus签到与监控提醒", NotificationManager.IMPORTANCE_DEFAULT)
         )
+        // 故障转移需要横幅甚至在锁屏弹出，必须单独一个高重要性通道（已有通道的重要性不可上调）。
+        manager.createNotificationChannel(
+            NotificationChannel(FAILOVER_CHANNEL_ID, "虾大助手Plus需手动确认", NotificationManager.IMPORTANCE_HIGH)
+        )
     }
 
     /** true 表示本地已提交系统，或远程任务已接受；远程是否送达仍由异步发送结果决定。 */
@@ -404,9 +410,66 @@ class RollcallMonitorService : Service() {
             .build()
     }
 
+    /**
+     * 故障转移提醒：自动流程放弃时要求人工确认并手动签到。
+     *
+     * 同一场签到只提醒一次（记录落盘，服务重启后不重复）。是否锁屏全屏弹出受
+     * [AssistantSettings.rollcallFailoverFullScreen] 与系统「全屏通知」授权共同控制，
+     * 未授权时退化为高优先级横幅通知——提醒本身不丢。
+     */
+    internal fun notifyFailover(
+        event: RollcallEvent,
+        reason: String,
+        notify: NotificationSettings = AssistantSettings(this).notifications(),
+    ): Boolean {
+        if (event.id.isBlank()) return false
+        val settings = AssistantSettings(this)
+        if (event.id in settings.rollcallFailoverNotified()) return false
+        settings.markRollcallFailoverNotified(event.id)
+        val reasonText = when (reason) {
+            FAILOVER_ANSWER_EXHAUSTED -> "自动签到已重试多次仍未成功"
+            FAILOVER_OWN_STATUS_UNKNOWN -> "名单里的本人状态无法确认"
+            else -> "自动处理未能完成"
+        }
+        val openIntent = PendingIntent.getActivity(
+            this,
+            event.id.hashCode(),
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("open_page", Page.ROLLCALL.id)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val body = buildList {
+            add(reasonText)
+            add("课程：${event.courseTitle}")
+            add("类型：${event.type}")
+            if (event.remainingSeconds != null) add("剩余：${event.remainingSeconds} 秒")
+            add("请打开签到页确认，并手动完成签到。")
+        }.joinToString("\n")
+        val builder = Notification.Builder(this, FAILOVER_CHANNEL_ID)
+            .setContentTitle("需手动确认签到：${event.courseTitle}")
+            .setContentText("$reasonText · ${event.type}")
+            .setStyle(Notification.BigTextStyle().bigText(body))
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentIntent(openIntent)
+            .setAutoCancel(true)
+            .setDefaults(Notification.DEFAULT_SOUND or Notification.DEFAULT_VIBRATE)
+            .setPriority(Notification.PRIORITY_HIGH)
+        if (settings.rollcallFailoverFullScreen && ExamReminder.canUseFullScreenIntent(this)) {
+            builder.setFullScreenIntent(openIntent, true)
+        }
+        return postReminderNotification(
+            id = event.id.hashCode(),
+            systemEnabled = notify.systemEnabled,
+            channelId = FAILOVER_CHANNEL_ID,
+        ) { builder.build() }
+    }
+
     private fun postReminderNotification(
         id: Int,
         systemEnabled: Boolean,
+        channelId: String = REMINDER_CHANNEL_ID,
         notification: () -> Notification,
     ): Boolean {
         if (!systemEnabled) return false
@@ -415,7 +478,7 @@ class RollcallMonitorService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return false
-        val channel = manager.getNotificationChannel(REMINDER_CHANNEL_ID) ?: return false
+        val channel = manager.getNotificationChannel(channelId) ?: return false
         if (channel.importance == NotificationManager.IMPORTANCE_NONE) return false
         return try {
             manager.notify(id, notification())
@@ -485,8 +548,11 @@ class RollcallMonitorService : Service() {
         private const val TAG = "RollcallMonitorService"
         private const val CHANNEL_ID = "xmu_assistant_monitor"
         private const val REMINDER_CHANNEL_ID = "xmu_assistant_rollcall_reminders"
+        /** 故障转移提醒专用通道：需要横幅/全屏，重要性必须为 HIGH。 */
+        private const val FAILOVER_CHANNEL_ID = "xmu_assistant_rollcall_failover"
         private const val FOREGROUND_NOTIFICATION_ID = 1001
         private const val MONITOR_PROBLEM_NOTIFICATION_ID = 1002
+        private const val FAILOVER_NOTIFICATION_ID = 1003
         private const val ERROR_NOTIFY_THRESHOLD = 3
         private const val MAX_SEEN_ROLLCALLS = 300
         private const val MAX_ANSWER_ATTEMPTS_TRACKED = 512

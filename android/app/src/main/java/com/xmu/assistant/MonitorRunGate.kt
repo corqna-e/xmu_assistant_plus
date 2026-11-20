@@ -133,6 +133,15 @@ fun <T> processActiveMonitorPoll(
 }
 
 /**
+ * 故障转移原因：自动提交达到重试上限仍失败。
+ * 由服务侧转成用户可见的提醒文案。
+ */
+internal const val FAILOVER_ANSWER_EXHAUSTED = "answer_exhausted"
+
+/** 故障转移原因：名单里本人状态无法判定（多条记录互相矛盾或字段缺失）。 */
+internal const val FAILOVER_OWN_STATUS_UNKNOWN = "own_status_unknown"
+
+/**
  * 带门槛的签到轮次。通知和提交分别去重；等待门槛、缺少数字码时保持待处理。
  * 写请求异常最多重试 [maxAnswerAttempts] 次，避免回执不明时无限重复提交。
  */
@@ -149,6 +158,8 @@ internal fun processRollcallMonitorPoll(
     onSuccess: () -> Unit,
     settingsStillCurrent: () -> Boolean = { true },
     maxAnswerAttempts: Int = 3,
+    // 故障转移：自动流程放弃时回调，由服务侧决定是否弹全屏提醒（同一场签到只提醒一次）。
+    onFailover: (RollcallEvent, String) -> Unit = { _, _ -> },
 ) {
     var hasUnresolvedAnswerFailure = false
     var firstAnswerFailure: Exception? = null
@@ -179,6 +190,9 @@ internal fun processRollcallMonitorPoll(
         val expired = event.isExpired || event.remainingSeconds == 0L
         if (!expired && event.ownStatus == STATUS_UNKNOWN) {
             if (previousAttempt != 0) hasUnresolvedAnswerFailure = true
+            // 名单里本人状态无法判定（多行矛盾/字段缺失），自动流程没有可靠依据，
+            // 交给人工确认；是否真的弹提醒由服务侧去重后决定。
+            onFailover(event, FAILOVER_OWN_STATUS_UNKNOWN)
             continue
         }
         val resolvedStatus = event.ownStatus ?: event.status
@@ -197,6 +211,7 @@ internal fun processRollcallMonitorPoll(
             // 有界停止写入，但保留失败态；不能写入 completed 后让下一轮 onSuccess
             // 把真实的签到失败从监控健康状态中清掉。
             hasUnresolvedAnswerFailure = true
+            onFailover(event, FAILOVER_ANSWER_EXHAUSTED)
             continue
         }
         if (!settings.thresholdReached(event.progress)) {
@@ -256,7 +271,7 @@ internal fun processRollcallMonitorPoll(
         }
     }
     // 单个签到的拒绝/网络失败不应饿死同轮其它签到；处理完后仍上报首个错误，
-    // 由监控记录本轮失败，绝不把局部成功当作整体健康。
+    // 由监控记录本次失败，绝不把局部成功当作整体健康。
     firstAnswerFailure?.let { throw it }
     if (!hasUnresolvedAnswerFailure) runIfActive(onSuccess)
 }

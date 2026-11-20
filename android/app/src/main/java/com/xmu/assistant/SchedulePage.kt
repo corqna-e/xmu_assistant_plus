@@ -96,15 +96,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- *日程堆叠卡收起态步进 44dp。
+ * 收起态；步进 56dp → 46dp；再收到 44dp。
  *只压缩「课名下方到下一张卡顶端」的空白，文字位置始终不动。
  * 几何账：
  *12dp 上内边距 + 24dp 课名行 + 8dp 下方空白 = 44dp。
- * 上方 12dp，下方 8dp。
+ * 上方仍是 12dp（与 平铺一致），下方 20dp → 10dp → 8dp，即下方卡片再上移 2dp。
  * 收起态不再画结束时间那一行（见 AgendaCourseCard 的 showDetails），否则会切出半截 09:40。
  */
 private val AGENDA_STACK_STEP = 44.dp
-/**「已上课程置灰」的 0.5 半透明度，只作用在整摞合成后的一层上。 */
+/**沿用 平铺时「已上课程置灰」的 0.5 半透明度，但只作用在整摞合成后的一层上。 */
 private const val AGENDA_STACK_ALPHA = 0.5f
 
 /**
@@ -187,7 +187,7 @@ private fun EdgeZoomSlider(
 }
 
 /**
- *整体缩到原来的一半左右、改成右下角的小卡片；
+ *按需求再收一版 —— 整体缩到原来的一半左右、改成右下角的小卡片；
  * 空闲时半透明（0.55），一碰立刻全不透明，停手 2 秒淡回半透明：
  * 既不会常年压着课表，也不至于要用时找不着。
  * 缩放值由 AssistantSettings 跨重启记住（本组件只负责展示与回调）。
@@ -399,8 +399,8 @@ internal fun SchedulePage(
     var selectedWeek by rememberSaveable(termCode) { mutableIntStateOf(defaultWeek) }
     var viewModeName by rememberSaveable { mutableStateOf(ScheduleViewMode.AGENDA.name) }
     // 周课表缩放：内部仍是真实缩放值，默认 0.75；
-    //UI 把这个默认点重标为「100%」（显示值 = gridScale / 0.75 * 100），
-    //滑条范围 33%~150%（上限由 200% 收到 150%），用户看到的 100% 就是最合适的标准大小。
+    // UI 把这个默认点重标为「100%」（显示值 = gridScale / 0.75 * 100），
+    // 滑条范围 33%~150%（上限由 200% 收到 150%），用户看到的 100% 就是最合适的标准大小。
     // 缩放值存入加密设置，跨重启自动记住（rememberSaveable 只负责转屏恢复）。
     val appSettings = settingsOverride ?: remember(context) { AssistantSettings(context) }
     var gridScale by rememberSaveable { mutableStateOf(appSettings.scheduleGridScale) }
@@ -519,6 +519,19 @@ internal fun SchedulePage(
     // ICS 导出走 cacheDir → FileProvider → 系统分享（日历/邮件应用均可导入）；
     // 文件很小（<200KB），生成与落盘放 IO 协程只为规避主线程磁盘 StrictMode 告警。
     val scope = rememberCoroutineScope()
+
+    /**
+     * 本地课表改动（调课 / 修改安排 / 还原 / 单周停课）后重投桌面组件。
+     *
+     * 这些改动只落在本机偏好里，不触发教务刷新，因此组件上要等下一次联网同步才会变 ——
+     * 调一次课桌面等到第二天早上 7:00 也不一定更新。这里只读缓存快照重算一遍，
+     * 放 IO 线程是因为整学期投影要读两次覆盖存储。
+     */
+    fun refreshWidgetsAfterEdit() {
+        val appContext = context.applicationContext
+        scope.launch(Dispatchers.IO) { runCatching { refreshScheduleWidgetsFromCache(appContext) } }
+    }
+
     var exporting by remember { mutableStateOf(false) }
     fun exportScheduleIcs() {
         val activeCalendar = calendar ?: run {
@@ -571,6 +584,7 @@ internal fun SchedulePage(
                     onSave = { value ->
                         overrideStore.save(termCode, base, value)
                         overrideRevision += 1
+                        refreshWidgetsAfterEdit()
                         selectedCourse = applyScheduleOverride(base, value)
                     },
                     onRestoreOfficial = {
@@ -578,6 +592,7 @@ internal fun SchedulePage(
                         // 跨周搬课也一并还原，否则课会留在搬过去的那一周。
                         moveStore.remove(termCode, base)
                         overrideRevision += 1
+                        refreshWidgetsAfterEdit()
                         selectedCourse = base
                     },
                 )
@@ -721,6 +736,7 @@ internal fun SchedulePage(
                     }
                 }
                 overrideRevision += 1
+                refreshWidgetsAfterEdit()
                 selectedCourse = null
                 selectedBaseCourse = null
                 swapDialogOpen = false
@@ -901,7 +917,7 @@ internal fun SchedulePage(
         // 只在周课表且本周有课时出现：日程视图没有缩放，空态也不需要滑条。
         if (viewMode == ScheduleViewMode.WEEK && displayGroups.isNotEmpty()) {
             // 内容区底边就是底栏上沿，所以右下角只需让 10dp 就真的贴住右下角了；
-            // 不能沿用悬浮控件那套 146dp 底距（那是给「整屏悬浮层」算的，用在内容区里等于把卡片抬到半空）。
+            // 那个 146dp 是给「整屏悬浮层」算的，用在内容区里等于把卡片抬到半空。
             // 提示条是整屏覆盖层且通栏，出现时才临时上让（条高约 44dp + 8dp 间距）。
             val zoomBottom by animateDpAsState(
                 targetValue = if (toastVisible) 56.dp else 10.dp,
@@ -1114,7 +1130,7 @@ private fun ScheduleNextCourseCard(
 }
 
 /** 明日课程：按真实日期预览明天的课，跨周时取下一周数据；点击可看课程详情。
- *旧版单行 Row 里教室文本没有宽度约束，长教室名会挤压课程名
+ *重做：旧版单行 Row 里教室文本没有宽度约束，长教室名会挤压课程名
  *甚至溢出；改为每节课一张两行小卡片，时间列固定宽度、正文按 weight 自适应并省略。 */
 @Composable
 private fun ScheduleTomorrowCard(
@@ -1240,7 +1256,7 @@ internal fun ScheduleGridCourseBlock(
     overlapping: Boolean = false,
     textScale: Float = 1f,
 ) {
-    //单元格文字：紧凑排版 —— 左对齐、逐行自然换行，
+    // 单元格文字：按需求恢复 的紧凑排版 —— 左对齐、逐行自然换行，
     // 只保留「课程名 / 节次 / 地点」三行，起止时间不再在格子里重复（已由左侧节次列承担）。
     fun scaled(style: TextStyle) = style.copy(
         fontSize = style.fontSize * textScale,
@@ -1299,7 +1315,7 @@ internal fun ScheduleGridCourseBlock(
             }
             PrivacyText(
                 // 格子里走 forGrid 分支 —— 只删「楼」字；无教室仍显示「无 / 教室信息」
-                // 两行（只有桌面小组件才精简成「无」）。
+                // 两行（恢复，只有桌面小组件才精简成「无」）。
                 glueParentheses(scheduleLocationSummary(group, forGrid = true)),
                 style = scaled(MaterialTheme.typography.bodySmall),
                 fontWeight = FontWeight.Medium,
@@ -1360,7 +1376,7 @@ private fun ScheduleAgendaView(
     // 已上过的课不再平铺成一列，改成互相重叠的一摞。
     // 收起态里后面的卡只画「时间 / 课名 / 节次」顶部条带，不画地点与周次，
     // 露出的部分不会出现半截地点；整摞半透明但用离屏合成，遮挡关系仍然正确。
-    // 点击整摞展开成正常平铺；展开状态只用 remember（不落 rememberSaveable），
+    // 点击整摞展开成 那样的正常平铺；展开状态只用 remember（不落 rememberSaveable），
     // 离开日程页 / 切到周课表再回来时组合被销毁，回来自动重新收起。
     val (stackGroups, restGroups) = if (selectedIsCurrent && selectedDay == todayWeekday) {
         dayGroups.partition { it.endTime < nowValue }
@@ -1426,7 +1442,7 @@ private fun AgendaCourseCard(
                     color = if (group.isExam) examInk else themePrimary(),
                     fontWeight = FontWeight.Bold,
                 )
-                //收起态条带只有一行（44dp = 12 + 24 + 8），结束时间与地点 / 周次一起不画；
+                // 收起态条带只有一行（44dp = 12 + 24 + 8），结束时间与地点 / 周次一起不画；
                 // 否则它正好落在下一张卡的上沿，会被切成半截。展开态仍完整显示。
                 if (showDetails) {
                     PrivacyText(formatXmuTime(group.endTime), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1486,15 +1502,15 @@ private fun AgendaCourseCard(
 }
 
 /**
- *已上过的课收成一摞，整块可点，点开后由外层改成正常平铺。
- * 收起态步进 44dp；条带只画一行「起始时间 / 课名 / 节次」。
+ *已上过的课收成一摞，整块可点，点开后由外层改成 那样的正常平铺。
+ * 步进 46dp，再收到 44dp；收起态条带只画一行「起始时间 / 课名 / 节次」。
  *
  * - 后面的卡 `showDetails = false`，只画「时间 / 课名 / 节次」顶部条带，不画结束时间、
  *地点与周次；露出的高度里根本不存在第二行文字，下半截由前一张卡完整遮住。
  *课名上方空白 12dp 保持不变、下方空白 8dp，文字位置不动。
  * - 半透明施加在「整摞合成后的一层」：卡在离屏缓冲里用不透明底色按先后绘制，后画的盖住
  *前画的，再把整层按 alpha 合成到页面。前卡半透明时透出的是页面背景，而不是它压住的
- *后卡内容；若把 alpha 逐张加在卡上，被压住的文字就会从前卡里透出来。
+ *后卡内容；若把 alpha 逐张加在卡上，被压住的文字就会从前卡里透出来（踩过的坑）。
  * - 展开状态由外层用普通 remember 保存，离开日程页即销毁，回来自动收起。
  */
 @Composable
@@ -1524,7 +1540,7 @@ private fun AgendaPastCourseDeck(
 }
 
 /**
- *自写 Layout，固定步进：第 i 张的顶部 = i * step。
+ * 自写 Layout；改为固定步进：第 i 张的顶部 = i * step。
  * 后提交的卡片画在上层，底色不透明，因此完整遮住前一张被压住的部分。
  * 整摞的半透明由外层统一施加，不在这里逐张设 alpha。
  */
@@ -1752,7 +1768,7 @@ internal const val SCHEDULE_NO_ROOM_TEXT = "无教室信息"
 
 /**
  * 周课表缩放：内部保存的是真实缩放值，界面显示值 = 缩放值 / [GRID_SCALE_BASE] * 100，
- *即默认值 0.75 显示为 100%（把默认点重标为 100%）。
+ * 即默认值 0.75 显示为 100%（把默认点重标为 100%）。
  *显示上限由 200% 收到 150%，对应真实缩放上限 [MAX_GRID_SCALE]（0.25~1.125）。
  */
 internal const val GRID_SCALE_BASE = 0.75f
@@ -1789,7 +1805,7 @@ internal fun weekdayName(weekday: Int): String = when (weekday) {
  * 边框用 outlineVariant 低透明度，避免四块框线太重把弹窗压得很闷。
  */
 /**
- *调课弹窗专用紫色配色 —— 全部背景色用紫色。
+ *调课弹窗专用紫色配色 —— 「全部背景色用紫色」。
  * 弹窗底色最深、每块浅一档，块内选中的键再用一档更亮的紫，层次靠明度区分而不靠灰边。
  */
 @Composable

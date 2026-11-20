@@ -36,7 +36,7 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
             WidgetDetailOverlay.openSchedule(context, intent)
             return
         }
-        //SHOW 延后 0.5s 绘制，先 goAsync 撑住进程到延迟任务执行完。
+        // SHOW 延后 0.5s 绘制，先 goAsync() 撑住进程到延迟任务执行完。
         val deferred = if (WidgetDetailOverlay.isDeferredShow(intent)) goAsync() else null
         // 课程详情覆盖层的展开 / 收起 —— 组件内部重绘，不启动任何界面。
         // 只重绘覆盖层这一层，课表网格不重建。
@@ -122,7 +122,7 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
         const val ACTION_TODAY = "com.xmu.assistant.weekwidget.TODAY"
 
         /**
-         *当前教学周的判定顺序 —— 先读同步时落库的值，再退回按周一的 epochDay 比对。
+         * 当前教学周的判定顺序 —— 先读同步时落库的值，再退回按周一的 epochDay 比对。
          * 之前只有 epochDay 一种判据，学期日历一日偏差就会整周匹配不上，
          * 兜底又落到「最后一周」，桌面上这张卡片就成了空白。
          */
@@ -190,6 +190,8 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
                 )
             }.getOrNull() ?: return
             ids.forEach { id -> runCatching { manager.updateAppWidget(id, views) } }
+            // 记下这一版用的是深色还是浅色：系统切换深色时据此判断要不要重画。
+            WidgetThemeState.setRenderedDark(context, widgetDark(context))
         }
 
         /**
@@ -197,7 +199,7 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
          *
          * 为什么不用 Canvas 位图：位图必须知道卡片的确切像素尺寸才能 1:1 铺满，
          * 而桌面只上报一个 min/max 区间（本机 206/284，实际卡片比两者都高）。
-         * 比例对不上时 fitCenter 一侧留白、fitXY 把字拉扁，位图方案因此不可行。
+         * 比例对不上时 fitCenter 一侧留白、fitXY 把字拉扁，v69~v73 都栽在这里。
          * 现在高度/宽度全部由 layout_weight 分配，任何尺寸都自然铺满且零缩放。
          */
         private fun buildWeekViews(
@@ -255,6 +257,7 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
                 return finish()
             }
             if (snapshot == null) return showEmpty("课表还未同步\n打开课表刷新后即可查看")
+            // 只有「跟随当前周」时才做日期新鲜度校验；主动翻到的周不校验。
             if (renderWeek == 0 && !ScheduleWeekWidgetData.isCurrentWeek(snapshot, today)) {
                 return showEmpty("周课表待更新\n点击打开课表刷新")
             }
@@ -282,7 +285,7 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
                 views.setTextColor(HEAD_DATE_IDS[index], if (isToday) onChip else secondary)
             }
 
-            // —— 左侧节次列：节号在上、起始时间在下，11 格等分高度 ——
+            // —— 左侧节次列：节号在上、起始时间在下，11 格等分高度（恢复）——
             val windows = officialSectionWindows()
             for (section in 1..11) {
                 views.setTextViewText(TIME_SECTION_IDS[section - 1], section.toString())
@@ -345,8 +348,8 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
             val argb = SCHEDULE_COLOR_PALETTE[index].toArgb()
             // 课名在淡色块上偏淡，单独加深一档（更实、更清楚）；地点沿用原色，
             // 只让课名承担视觉重点，其余位置不动。
-            // 暗色下地点原先混白 0.45、课名只混白 0.28，反而地点更亮，
-            // 课程名不如地点明显。现在让课名成为最亮的一层，地点退回次要亮度。
+            // 暗色下地点原先混白 0.45、课名只混白 0.28，反而地点更亮 —— 
+            // 「课程名不如地点明显」。现在让课名成为最亮的一层，地点退回次要亮度。
             val nameColor = if (dark) blendWithWhite(argb, 0.58f) else blendWithBlack(argb, 0.40f)
             val locColor = if (dark) blendWithWhite(argb, 0.32f) else argb
             views.setTextColor(R.id.week_block_name, nameColor)
@@ -385,7 +388,7 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
 
         /** 地点：删「楼」字、多教室合并；「无教室信息」按小组件约定显示成「无」。
          *不做字数截断，交给 TextView 自动换行完整显示。
-         *不做「右括号后强制换行」—— 地点区只有两行空间，
+         *撤销 的「右括号后强制换行」—— 地点区只有两行空间，
          *主动换行会让「学武(1号)A401」变三行、直接显示不下。靠 8dp 字号自然折行即可。 */
         private fun weekBlockLocation(course: ScheduleWidgetCourse): String {
             val text = course.location

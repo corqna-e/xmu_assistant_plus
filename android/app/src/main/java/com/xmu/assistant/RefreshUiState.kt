@@ -29,7 +29,7 @@ fun refreshFailureMessage(error: Throwable): String {
 }
 
 /**
- *文案去重 —— refreshFailureMessage 出来的句子本身就常带「请稍后重试」，
+ *文案去重 —— refreshFailureMessage() 出来的句子本身就常带「请稍后重试」，
  * 再拼一句「请重试。」就成了「…请检查网络后重试。请重试。」。
  * 有重试按钮时（withRetryHint = true）不再追加提示语，按钮自己会说话。
  */

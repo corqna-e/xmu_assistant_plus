@@ -272,7 +272,7 @@ internal class XmuExamClient(
         val fullWindow = termsBetween(enrollmentYear, recent) // 新→旧
         // 学号解析出的入学年份晚于教务可用学期时窗口为空（学号格式漂移 / 教务列表滞后）：
         // 空窗口没有可锚定的下界，直接回落串行 blank-stop 探测，
-        //避免 fullWindow.last 抛 NoSuchElementException 让考试页整体取不到数据。
+        // 避免 fullWindow.last() 抛 NoSuchElementException 让考试页整体取不到数据。
         if (fullWindow.isEmpty()) return probeWithBlankStop(recent, maxProbe, blankLimit)
         // 收敛下界：最近已知有效学期往前 2 个学期；更早学期不重探（数据在缓存，列表稳定）
         val newestKnown = knownTerms.firstOrNull()
@@ -412,7 +412,7 @@ internal class XmuExamClient(
         val startedAt = System.currentTimeMillis()
         val response = base.request(url, "POST", body, referer = EXAM_REFERER, operation = NetworkOperation.EXAM, applyPostHeaders = true)
         JwDebugLog.d("REQ POST $path -> ${response.code} ${System.currentTimeMillis() - startedAt}ms")
-        // 风控红线：只有"真会话失效"（401/403/重定向到统一登录域/登录页特征）才判过期触发续登；
+        // 风控约束：只有"真会话失效"（401/403/重定向到统一登录域/登录页特征）才判过期触发续登；
         // 5xx、非鉴权 4xx、服务端坏页一律归为响应异常，绝不触发 CAS 重登（与成绩格式/会话严格区分同构）。
         if (response.isSessionExpired()) {
             throw ExamSessionExpiredException()
@@ -474,7 +474,6 @@ internal class XmuExamClient(
      *BOM 剥离对齐 XmuScoreAutoQueryClient 先例（该源真实出现过带 BOM 响应）。 */
     private fun parseRoot(body: String): JSONObject =
         runCatching { JSONObject(body.removePrefix("\uFEFF")) }.getOrElse { error ->
-            Diagnostics.record("考试", error, "考试接口 JSON 解析（${body.length} 字符）")
             throw ExamResponseException(cause = error)
         }
 

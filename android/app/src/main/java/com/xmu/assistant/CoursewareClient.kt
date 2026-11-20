@@ -125,7 +125,7 @@ class CoursewareClient private constructor(
             } catch (error: MainSessionExpiredException) {
                 // 真会话失效（401/登录页重定向）已被 getJson 确认：立即上抛触发续登，
                 // 不再串行打满其余端点白等（与 fetchCourseware 行为一致）；
-                // 减少未认证状态下的多余请求，同样符合风控红线。
+                // 减少未认证状态下的多余请求，同样符合风控约束。
                 throw error
             } catch (error: Throwable) {
                 errors.add("$endpoint: ${error.message}")
@@ -202,7 +202,7 @@ class CoursewareClient private constructor(
     }
 
     /**
-     *@param courseFolder 课程名+学期，公共下载目录内的子文件夹名；空串退回根目录（兼容测试与旧调用）。
+     * @param courseFolder 课程名+学期，公共下载目录内的子文件夹名；空串退回根目录（兼容测试与旧调用）。
      */
     fun download(item: CoursewareUiItem, courseFolder: String = ""): String {
         val directory = downloadDirectory
@@ -323,7 +323,7 @@ class CoursewareClient private constructor(
             if (result.code != 200 && result.code != 206) error("平台未返回可下载文件（HTTP ${result.code}）")
             val contentType = result.contentType.lowercase()
             // The transport deliberately leaves HTML/JSON/XHTML challenge
-            //payloads out of the .part file. Treat all of them as failures
+            // payloads out of the .part file.  Treat all of them as failures
             // here too; otherwise an empty placeholder (or an old partial)
             // could be renamed as a successful download.
             if ("text/html" in contentType ||
@@ -350,7 +350,7 @@ class CoursewareClient private constructor(
     /**
      *唯一落点 = 公共「下载/xmu助手课件」。
      *
-     * 不能采用「有授权写授权目录、没授权写公共目录」的双轨策略：同一次
+     * 之前的逻辑是「有授权写授权目录、没授权写公共目录」，实机表现为同一次
      * 下载的文件被劈成两处（授权文件夹一份、另一个新建的子文件夹一份），
      * 用户根本找不到。而 Android 10 起写公共下载目录本就不需要任何授权，
      * 也没有必要再让用户选目录：统一写公共目录，一处落点，无歧义。
@@ -432,7 +432,7 @@ class CoursewareClient private constructor(
         if (response.code !in 200..299) error(ErrorCodes.NETWORK_FAILURE)
         if (isKnownLoginForm(response.body)) throw MainSessionExpiredException()
         // 2xx 但非 JSON（空 body/HTML 错误页）：解析异常统一归为「网络失败」，
-        //否则 JSONException 会从 download 等无兜底调用点逃逸
+        // 否则 JSONException 会从 download() 等无兜底调用点逃逸
         return runCatching {
             if (response.body.trimStart().startsWith("[")) JSONArray(response.body) else JSONObject(response.body)
         }.getOrElse { error(ErrorCodes.NETWORK_FAILURE) }
@@ -519,12 +519,7 @@ class CoursewareClient private constructor(
         return target
     }
 
-    private fun sanitizedFileName(rawName: String): String =
-        rawName.replace(Regex("""[<>:"/\\|?*\u0000-\u001f]"""), "_")
-            .trim()
-            .trimEnd('.')
-            .ifBlank { "courseware" }
-            .take(120)
+    private fun sanitizedFileName(rawName: String): String = coursewareSafeFileName(rawName)
 
     private fun reserveDownloadFiles(directory: File, rawName: String, resourceIdentity: String? = null): Pair<File, File> {
         // 有限重试：目录不可写（磁盘满/权限/文件系统错误）时 createNewFile 会一直失败，
@@ -592,8 +587,7 @@ class CoursewareClient private constructor(
     }
 }
 
-/** Stable business identity: never bind a partial to a renewable signed URL. */
-internal fun coursewareResourceIdentity(item: CoursewareUiItem): String =
+/** Stable business identity: never bind a partial to a renewable signed URL. */internal fun coursewareResourceIdentity(item: CoursewareUiItem): String =
     if (item.referenceId.isNotBlank()) {
         JSONArray(listOf("reference", item.courseId, item.activityId, item.referenceId)).toString()
     } else if (item.resourceId.isNotBlank()) {
@@ -610,6 +604,22 @@ fun isDirectCoursewareUrl(url: String): Boolean = runCatching {
     val path = url.toHttpUrlOrNull()?.encodedPath.orEmpty().lowercase()
     DIRECT_COURSEWARE_EXTENSIONS.any { path.endsWith(it) }
 }.getOrDefault(false)
+
+/**
+ * 课件落盘用的文件名：替换文件系统禁用字符、去尾部点、限长 120。
+ * 下载（CoursewareClient）与本地文件检查（「检查」按钮）必须用同一套规则，
+ * 否则检查永远匹配不到真实落盘的文件。
+ */
+internal fun coursewareSafeFileName(rawName: String): String =
+    rawName.replace(Regex("""[<>:"/\\|?*\u0000-\u001f]"""), "_")
+        .trim()
+        .trimEnd('.')
+        .ifBlank { "courseware" }
+        .take(120)
+
+/** 某个课件条目落盘时的文件名（入口类课件也按标题生成，与下载分支一致）。 */
+internal fun coursewareFileName(item: CoursewareUiItem): String =
+    coursewareSafeFileName(item.filename.ifBlank { item.title })
 
 private fun java.net.URL.effectivePort(): Int =
     if (port != -1) port else if (protocol.equals("https", ignoreCase = true)) 443 else 80

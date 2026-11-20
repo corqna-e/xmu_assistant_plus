@@ -130,7 +130,7 @@ internal fun rememberExamSection(
 }
 
 /**
- * 首页只读渲染态分组（2026-08-27 参数收敛第一批，批次三·宁少勿破）：
+ * 首页只读渲染态分组（参数收敛第一批，批次三·宁少勿破）：
  * 仅聚合「值语义」的展示输入；凡读写器成对的 stale-guard 参数组
  * （accountTransition 設置器、monitorTransition 全家、busyNow 读取器等）
  * 一律保持独立成对参数，不收拢以免破坏守卫语义。
@@ -392,8 +392,8 @@ internal fun MainScreen(
         }
         AppBackNavigation(page, backTarget, onSelected = onModuleEntered)
         // 外层用 surface（白）承接系统状态栏/导航栏区域，
-        //内容区的浅蓝白背景改为画在 safeDrawingPadding 之后（只覆盖安全区内部）。
-        //之前 background 画在 safeDrawingPadding 之前，把底部手势条/三键区域也刷成
+        // 内容区的浅蓝白背景改为画在 safeDrawingPadding() 之后（只覆盖安全区内部）。
+        // 之前 background 画在 safeDrawingPadding() 之前，把底部手势条/三键区域也刷成
         // 浅蓝白，看起来像「底部导航栏没铺满白色」。
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Box(
@@ -605,6 +605,9 @@ internal fun MainScreen(
                                 downloadDirectoryPath = courseware.downloadDirectoryPath,
                                 onOpenDownloadDirectory = { openCoursewareDownloadDirectory() },
                                 onRetryFailed = courseware::retryFailed,
+                                onCheckLocalFiles = courseware::checkLocalFiles,
+                                onCancelDownload = courseware::cancelDownloads,
+                                missingLocalIds = courseware.missingLocalIds,
                             )
                             }
                             // 当前周次是「整页布局」（内容区 weight + 固定底部确定/取消），
@@ -667,6 +670,9 @@ internal fun MainScreen(
                                             onThemeModeChanged = { mode ->
                                                 setThemeMode(mode)
                                                 settings.themeMode = mode
+                                                // 组件颜色是写死在 RemoteViews 里的，改外观后必须主动重投一次，
+                                                // 否则桌面要等下次同步才换肤。
+                                                runCatching { redrawScheduleWidgetsForTheme(activity) }
                                                 show("外观已更新")
                                             },
                                             // 隐私模式开关。读取即订阅，开关本身写 prefs 兜底重启恢复。
@@ -678,7 +684,7 @@ internal fun MainScreen(
                                             },
                                             onTest = testNotifications,
                                             // 桌面小组件设置从「策略」整体搬入本页。
-                                            //总开关（widgetEnabled）无实际作用，
+                                            // 总开关（widgetEnabled）自 已无实际作用，
                                             // 其回调与 UI 早已摘除，这里不再传 onWidgetToggle。
                                             onAddWidget = {
                                                 if (knownPinBlockedOem(activity)) {
@@ -715,7 +721,6 @@ internal fun MainScreen(
                                             onOpenBackgroundSettings,
                                             requestNotificationPermissionIfNeeded,
                                             jumpState = tutorialJump,
-                                            show = show,
                                         )
                                         Page.SETTINGS -> StrategyPreviewPage(
                                             settings,

@@ -22,7 +22,7 @@ import kotlinx.coroutines.withContext
  *前同样校验 isCurrent（防登出/换号后旧账号 cookie 写回）。
  * - 存储依赖收窄为函数式注入（scoreCookieHeader/setScoreCookieHeader/scoreRecordsJson/
  *scoreUpdatedAtMillis）：组合侧绑定 AssistantSettings（加密 prefs），测试注入 fake。
- * - 风控红线：成绩刷新内部可能触发教务 CAS 续登（XmuScoreAutoQueryClient 内部续登），
+ * - 风控约束：成绩刷新内部可能触发教务 CAS 续登（XmuScoreAutoQueryClient 内部续登），
  *与 TronClass 手动登录并发会打两个身份域——入口检查 accountTransitionInProgress；
  *请求统一走 "scores" 互斥门（RequestGate）。
  * - 网络/IO 用注入的 scope（组合侧 rememberCoroutineScope，随 Activity 销毁取消），

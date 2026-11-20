@@ -128,10 +128,8 @@ fun academicCacheFromJson(value: String): AcademicCacheSnapshot = runCatching {
         coursewareByCourse = courseware,
         coursewareUpdatedAtMillis = coursewareTimes,
     )
-}.getOrElse { error ->
-    // 解析失败不再无声折叠成空快照——留一条诊断，便于排查「课程/课件消失」类反馈
-    // 「平台没数据」和「本地缓存结构变了」。
-    Diagnostics.record("缓存", error, "课程/课件缓存 JSON 解析")
+}.getOrElse {
+    // 解析失败按空快照处理：缓存结构变化时退化为重新抓取，不影响功能可用性。
     AcademicCacheSnapshot()
 }
 

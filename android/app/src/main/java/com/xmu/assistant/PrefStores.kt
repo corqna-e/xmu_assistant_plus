@@ -9,7 +9,7 @@ package com.xmu.assistant
  * getSharedPreferences 调用保持原样。
  *
  * ── 文件级清单 ──────────────────────────────────────────────────────
- *1. xmu_assistant 【加密】AssistantSettings：主设置+会话凭据。
+ * 1. xmu_assistant        【加密】AssistantSettings：主设置+会话凭据。
  *EncryptedSharedPreferences（AES256_SIV/GCM），进程级单例缓存。
  *键：username / password / cookie_header / score_cookie_header /
  *score_records_json / score_updated_at_millis / academic_cache_json /
@@ -23,29 +23,29 @@ package com.xmu.assistant
  *qq_recipient / qq_ports / widget_enabled / manual_academic_week /
  *manual_academic_week_by_term / widget_worker_logged_in（登录态，
  *markLoginSucceeded 置 true / clearSession 置 false）
- *2. exam_cache 【明文】ExamCache：考试安排多学期缓存（JSON 数组）。
+ * 2. exam_cache           【明文】ExamCache：考试安排多学期缓存（JSON 数组）。
  *键：terms（学期列表）/ term_<code>（各学期摘要）/ last_probe_epoch_millis
  *（学期窗口探测节流）。
- *3. schedule_widget 【明文】ScheduleWidgetData：桌面小卡片今日摘要镜像。
+ * 3. schedule_widget      【明文】ScheduleWidgetData：桌面小卡片今日摘要镜像。
  *键：today_summary（单键 JSON）。
- *4. widget_mirror 【明文】登录态镜像的唯一真相源（不再与加密侧双写）：
+ * 4. widget_mirror        【明文】登录态镜像的唯一真相源（不再与加密侧双写）：
  *桌面小卡片服务进程读它，避免为读一个布尔加载加密库。
  *键：widget_logged_in（markLoginSucceeded 置 true；clearSession / clearLoggedOutUi
  *置 false，供周期 worker 复核是否允许教务 CAS 续登——登出后凭据残留，
- *不复核会幽灵登录）。widget_enabled 是旧版总开关的残留键，仅旧装存在，
+ *不复核会幽灵登录）。widget_enabled 是旧版的总开关残留键，仅旧装存在，
  *现已无人读写。
- *5. rollcall_seen 【明文】RollcallMonitorService：已通知签到去重持久化。
+ * 5. rollcall_seen         【明文】RollcallMonitorService：已通知签到去重持久化。
  *键：cookie（归属账号标识，换号失效判据）/ notified_ids_ordered /
  *completed_ids_ordered（两类有界 FIFO）/ answer_attempts（回执不明写请求计数）；
  *seen_ids / seen_ids_ordered 仅用于旧版迁移。
- *6. exam_reminder 【明文】考试提醒计划标识（随机值，不含账号/考试内容）。
+ * 6. exam_reminder        【明文】考试提醒计划标识（随机值，不含账号/考试内容）。
  *键：active_plan；取消/重排时替换，使已排队的旧广播失效。登出后保留失效标识。
  *
  * 7. xmu_schedule_overrides 【明文】持久课表本地调整，按学期/课程/原时段匹配；登出保留。
  * 8. xmu_radar_coordinates 【明文】持久课程地点库，与账号无关，登出/换号保留。
  *course_locations_v1 按平台 courseId 匹配；旧记录缺 id 时兼容课程标题。
  *
- * ── 登出清理链对照（clearLoggedOutUi，MainActivity；2026-08-29 与实现逐行核对）─
+ * ── 登出清理链对照（clearLoggedOutUi，MainActivity；与实现逐行核对）─
  * 登出时实际清理：会话键（cookie_header/score_cookie_header/score_records_json/
  * score_updated_at_millis）、academic_cache_json、exam_cache（exam.clearAll →
  * ExamCache.clear，考试数据跟随账号会话）、schedule_widget（ScheduleWidgetData.
@@ -59,15 +59,15 @@ package com.xmu.assistant
  * （markLoginSucceeded/clearSession/clearLoggedOutUi），不参与「清理」语义。
  * 本表仅固化对照关系防误删/漏删；清理实现改动须同步本段。
  *
- * ── 9 及以后：登记补充（均与登出清理无关）─────────
- *9. schedule_week_widget 【明文】周课表小部件镜像（周课表组件渲染用）。
- *10. widget_course_detail 【明文】今日组件课程详情覆盖层的当前行。
+ * ── 9 及以后：登记补充（长期漏登，一次补齐，均与登出清理无关）─────────
+ * 9.  schedule_week_widget  【明文】周课表小部件镜像（周课表组件渲染用）。
+ * 10. widget_course_detail  【明文】今日组件课程详情覆盖层的当前行。
  * 11. xmu_schedule_week_moves【明文】跨周搬课记录（ScheduleWeekMoveStore）。
- *12. courseware_storage 【明文】课件下载目录/进度等本地状态。
- *13. permission_audit 【明文】使用指南里「自启动已确认」的人工确认时间。
- *14. map_usage_guard 【明文】地图选点每日次数闸门（纯本地限额，不含位置）。
- *15. xmu_storage_flags 【明文】Keystore 失效自愈的一次性提示标记。
- *16. diagnostics 【明文】诊断环形缓冲（解析失败记录，不含凭据）。
+ * 12. courseware_storage    【明文】课件下载目录/进度等本地状态。
+ * 13. permission_audit      【明文】使用指南里「自启动已确认」的人工确认时间。
+ * 14. map_usage_guard       【明文】地图选点每日次数闸门（纯本地限额，不含位置）。
+ * 15. xmu_storage_flags     【明文】v112 Keystore 失效自愈的一次性提示标记。
+ * 16. diagnostics           【明文】v112 诊断环形缓冲（解析失败记录，不含凭据）。
  */
 internal object PrefStores {
     /** 登记锚：登记表命中的文件名必须与实际 getSharedPreferences 一致（测试守护）。 */
@@ -86,7 +86,7 @@ internal object PrefStores {
         "courseware_storage",
         "permission_audit",
         "map_usage_guard",
-        // Keystore 失效自愈的重置痕迹（明文，加密存储不可用时也要能写）
+        // 新增：Keystore 失效自愈的重置痕迹（明文，加密存储不可用时也要能写）
         // 与诊断环形缓冲（解析失败记录，不含凭据）。
         "xmu_storage_flags",
         "diagnostics",

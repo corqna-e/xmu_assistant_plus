@@ -41,6 +41,29 @@ internal data class CoursewareDownloadUiState(
     val lastFailureReason: String = "",
 )
 
+/**
+ * 「检查」的分类结果。
+ *
+ * @param hits 本地有文件、但还没记过下载标记的课件（要补标为已下载）。
+ * @param missing 记过下载标记、但本地扫不到文件的课件（界面显示「？已下载」）。
+ */
+internal data class LocalCheckResult(val hits: Set<String>, val missing: Set<String>)
+
+/**
+ * 按「已知课件 / 已下载标记 / 本地扫到的文件」三份集合分类，不涉及 IO，便于单测。
+ *
+ * 只针对 [knownIds] 判断：早已不在列表里的旧下载记录（课程换了学期、课件被撤下）
+ * 不参与，否则会平白多出一批「找不到文件」的提示。
+ */
+internal fun classifyLocalCheck(
+    knownIds: Collection<String>,
+    downloaded: Set<String>,
+    presentIds: Set<String>,
+): LocalCheckResult = LocalCheckResult(
+    hits = knownIds.filter { it in presentIds && it !in downloaded }.toSet(),
+    missing = knownIds.filter { it in downloaded && it !in presentIds }.toSet(),
+)
+
 internal class CoursewareSectionState(
     private val activity: Activity,
     private val requestGate: RequestGate,
@@ -70,6 +93,15 @@ internal class CoursewareSectionState(
     },
 ) {
     var coursewareItems by mutableStateOf(emptyList<CoursewareUiItem>())
+        private set
+
+    /**
+     * 标记为已下载、但最近一次「检查」在本地目录里没找到文件的课件 id。
+     *
+     * 只影响显示（角标变「？已下载」），不改下载标记本身：文件可能被用户挪走或改名，
+     * 找不到不等于没下过。重新下载成功或下次检查扫到文件就自动清掉。
+     */
+    var missingLocalIds by mutableStateOf(CoursewareStorage.missingLocalIds(activity))
         private set
 
     /** 各课程各自的课件结果；多选课程时按 activeCourseIds 合并展示。 */
@@ -111,6 +143,9 @@ internal class CoursewareSectionState(
 
     private var downloadBatchSeq = 0
     private var activeDownloadBatches = 0
+
+    /** 取消请求：置位后本批尚未开始的课件直接跳过（在跑的那几个照常收尾）。 */
+    private val cancelRequested = AtomicBoolean(false)
 
     /**
      * 下载世代：登出/换号走 [clearAll] 时递增。
@@ -341,6 +376,7 @@ internal class CoursewareSectionState(
         val batchKey = "downloads-${++downloadBatchSeq}"
         val generation = downloadGeneration
         if (!requestGate.tryStart(batchKey)) return
+        cancelRequested.set(false)
         activeDownloadBatches++
         downloadLoading = true
         // 新一批开始时，若上一批已经收尾（active=false），先归零再累计。
@@ -376,6 +412,7 @@ internal class CoursewareSectionState(
         scope.launch(Dispatchers.IO) {
             // 本批开始前先清掉过期断点残片（实测能堆到 72MB），再走正常下载。
             runCatching { createCoursewareClient(sessionCookie).pruneStalePartials() }
+            val skipped = AtomicInteger(0)
             try {
                 val files = AtomicInteger(0)
                 val entries = AtomicInteger(0)
@@ -384,6 +421,24 @@ internal class CoursewareSectionState(
                 val sessionExpired = AtomicBoolean(false)
                 runCatching {
                     downloadCoursewareInParallel(targets) { item ->
+                        // 取消：本批还没开始的课件直接跳过，状态退回「可下载」。
+                        // 已开始的那几个不打断 —— 中断写盘只会在中转目录留残缺 .part。
+                        if (cancelRequested.get()) {
+                            skipped.incrementAndGet()
+                            activity.runOnUiThread {
+                                if (generation != downloadGeneration) return@runOnUiThread
+                                val release: (CoursewareUiItem) -> CoursewareUiItem = { existing ->
+                                    if (existing.id == item.id &&
+                                        existing.downloadStatus == COURSEWARE_STATUS_DOWNLOADING
+                                    ) {
+                                        existing.copy(downloadStatus = COURSEWARE_STATUS_AVAILABLE, failureReason = "")
+                                    } else existing
+                                }
+                                coursewareItems = coursewareItems.map(release)
+                                itemsByCourse = itemsByCourse.mapValues { (_, items) -> items.map(release) }
+                            }
+                            return@downloadCoursewareInParallel
+                        }
                         // 每项都用当下 Cookie 建客户端；会话过期再用最新 Cookie 重试一次。
                         val cookieNow = cookieHeader().ifBlank { sessionCookie }
                         val courseFolder = folderByCourse[item.courseId].orEmpty()
@@ -399,6 +454,9 @@ internal class CoursewareSectionState(
                             // 落盘成功后写持久化标记，课件列表显示「已下载」。
                             if (result == COURSEWARE_STATUS_SUCCESS || result == COURSEWARE_STATUS_ENTRY_SAVED) {
                                 CoursewareStorage.markDownloaded(activity, item.id)
+                                // 重新落盘成功即说明文件存在，之前「检查」记下的缺失标记作废。
+                                CoursewareStorage.clearMissingLocal(activity, item.id)
+                                missingLocalIds = missingLocalIds - item.id
                                 // 该课件从「待看新增」移除；全部下载完则角标自然消失。
                                 CoursewareStorage.consumeNewId(activity, item.id)
                             }
@@ -439,7 +497,7 @@ internal class CoursewareSectionState(
                             )
                             // 写回不再依赖 sessionEpoch.accepts(...)。全量刷新/续登会
                             // 推进会话世代或改写 Cookie，旧实现会把整批结果吞掉，界面永远
-                            //停在「下载中」，看起来就像下载失败。登出时 clearAll 已清空列表，
+                            // 停在「下载中」，看起来就像下载失败。登出时 clearAll() 已清空列表，
                             // 旧回调即使回来也匹配不到条目，不会污染新账号数据。
                             if (loggedIn()) {
                                 val updatedItem = item.copy(
@@ -504,7 +562,22 @@ internal class CoursewareSectionState(
                         if (activeDownloadBatches <= 0) {
                             activeDownloadBatches = 0
                             downloadLoading = false
-                            downloadUiState = downloadUiState.copy(active = false, finished = true)
+                            // 取消只在全部批次停下后才收尾：此时没有写盘任务在跑，
+                            // 删 .part 才是安全的。
+                            if (cancelRequested.getAndSet(false)) {
+                                val removed = withContext(Dispatchers.IO) {
+                                    CoursewareStorage.deletePartialArtifacts(activity)
+                                }
+                                coursewareDownloadProgress = ""
+                                downloadUiState = CoursewareDownloadUiState()
+                                val skippedCount = skipped.get()
+                                show(
+                                    if (skippedCount > 0) "已取消：跳过 $skippedCount 项未开始的课件，已清理 $removed 个残片"
+                                    else "已取消下载"
+                                )
+                            } else {
+                                downloadUiState = downloadUiState.copy(active = false, finished = true)
+                            }
                         }
                     }
                     requestGate.finish(batchKey)
@@ -538,6 +611,90 @@ internal class CoursewareSectionState(
         coursewareDownloadProgress = ""
         downloadUiState = CoursewareDownloadUiState()
         downloadSelected()
+    }
+
+    /**
+     * 「检查」：扫一遍本地目录，做两件事。
+     *
+     * 1. 补标：下载过、但本机没记住标记的课件，本地有文件就补成「已下载」。
+     * 2. 报缺：已经标记为已下载、本地目录却找不到文件的，记进 [missingLocalIds]，
+     *    界面上把角标显示成「？已下载」，课程行的「已全部下载」也换成警示色。
+     *
+     * 下载标记本身只增不减：文件可能被用户挪走、改名或删在别的相册/网盘里，
+     * 找不到不等于没下过，所以这里不改 [CoursewareStorage.downloadedIds]。
+     * 匹配按（课程文件夹 + 落盘文件名）精确比对，不做跨科目模糊匹配。
+     */
+    fun checkLocalFiles() {
+        if (downloadUiState.active) {
+            show("下载进行中，请先取消再检查")
+            return
+        }
+        val known = allKnownItems()
+        if (known.isEmpty()) {
+            show("当前没有需要检查的课件")
+            return
+        }
+        val downloaded = CoursewareStorage.downloadedIds(activity)
+        val folderByCourse = academicCache().courses.associate { it.id to CoursewareStorage.courseFolderName(it) }
+        scope.launch(Dispatchers.IO) {
+            val index = CoursewareStorage.localFileIndex(activity)
+            val presentIds = known.filter { item ->
+                val folder = folderByCourse[item.courseId].orEmpty()
+                localFileNames(item).any { CoursewareStorage.containsLocalFile(index, folder, it) }
+            }.map { it.id }.toSet()
+            val result = classifyLocalCheck(known.map { it.id }, downloaded, presentIds)
+            // 补标：本地有文件、但还没标记的。
+            result.hits.forEach { id ->
+                CoursewareStorage.markDownloaded(activity, id)
+                CoursewareStorage.clearMissingLocal(activity, id)
+                CoursewareStorage.consumeNewId(activity, id)
+            }
+            // 报缺：标记过已下载、本地扫不到的。
+            val missing = result.missing
+            CoursewareStorage.setMissingLocalIds(activity, missing)
+            val hitIds = result.hits
+            val markedCount = known.count { it.id in downloaded }
+            withContext(Dispatchers.Main) {
+                missingLocalIds = missing
+                if (hitIds.isNotEmpty()) {
+                    coursewareItems = coursewareItems.map { applyLocalHit(it, hitIds) }
+                    itemsByCourse = itemsByCourse.mapValues { (_, items) -> items.map { applyLocalHit(it, hitIds) } }
+                }
+                show(
+                    when {
+                        hitIds.isNotEmpty() && missing.isNotEmpty() ->
+                            "已标记 ${hitIds.size} 项为已下载；另有 ${missing.size} 项标记为已下载但本地找不到文件"
+                        hitIds.isNotEmpty() -> "已标记 ${hitIds.size} 项为已下载"
+                        missing.isNotEmpty() -> "${missing.size} 项标记为已下载，但本地找不到文件"
+                        markedCount == 0 -> "本地未找到这些课件的文件"
+                        else -> "已下载的 $markedCount 项本地文件都在"
+                    },
+                )
+            }
+        }
+    }
+
+    private fun applyLocalHit(item: CoursewareUiItem, hitIds: Set<String>): CoursewareUiItem =
+        if (item.id in hitIds) item.copy(downloadStatus = COURSEWARE_STATUS_SUCCESS, failureReason = "") else item
+
+    /** 单个课件可能的落盘文件名：正常文件用条目文件名，入口类下载的是「标题.url」快捷方式。 */
+    private fun localFileNames(item: CoursewareUiItem): List<String> =
+        listOf(
+            coursewareFileName(item),
+            coursewareSafeFileName("${item.filename.ifBlank { item.title }}.url"),
+        ).distinct()
+
+    /**
+     * 「取消」：本批尚未开始的课件直接跳过（已开始的几个照常收尾，中断写盘只会留下
+     * 残缺 .part），全部批次停下后再统一删掉 .part 残片并把进度区复位成「待下载」。
+     */
+    fun cancelDownloads() {
+        if (!downloadUiState.active || activeDownloadBatches <= 0) {
+            show("当前没有进行中的下载")
+            return
+        }
+        cancelRequested.set(true)
+        show("正在取消尚未开始的下载")
     }
 
     /** 打开选中的课件（平台内链优先，缺省回退到课程学习页）。 */

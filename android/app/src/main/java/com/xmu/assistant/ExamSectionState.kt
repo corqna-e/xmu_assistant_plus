@@ -25,7 +25,7 @@ import kotlinx.coroutines.withContext
  *前同样校验 isCurrent（防登出/换号后旧账号 cookie 写回）。
  * - 存储依赖收窄为函数式注入（scoreCookieHeader/setScoreCookieHeader/reminderSettings）：
  *组合侧绑定 AssistantSettings（加密 prefs），测试注入 fake，互不依赖。
- * - 风控红线：考试内部可能触发教务 CAS 续登（XmuExamClient.fetchTermExams 统一续登，
+ * - 风控约束：考试内部可能触发教务 CAS 续登（XmuExamClient.fetchTermExams 统一续登，
  *进程级单飞门），与 TronClass 手动登录并发会打两个身份域——refresh/checkChanges 等
  *入口检查 accountTransitionInProgress；请求统一走 "exam" 互斥门，
  *提醒重排走 "exam-reminder" 门。
@@ -527,7 +527,7 @@ internal class ExamSectionState(
                         }
                     } finally {
                         // 与全仓其余骨架齐一（A2 统一）：loading 在世代守卫内释放。登出/换号
-                        //竞态下不在此复位——由 invalidateMainSessionUi → clearLoadingState 兜底。
+                        // 竞态下不在此复位——由 invalidateMainSessionUi → clearLoadingState() 兜底。
                         if (sessionEpoch.accepts(session, cookieHeader(), loggedIn())) {
                             loading = false
                         }

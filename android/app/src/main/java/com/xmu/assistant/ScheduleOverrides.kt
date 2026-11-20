@@ -13,7 +13,7 @@ internal data class ScheduleCourseOverride(
     val weeks: String,
     /**
      * 生效周次：null 表示该课程整学期所有周次（详情页「修改安排」与旧数据的语义），
-     *具体数字表示只调整这一周的那一次课（「调课」按周生效）。
+     * 具体数字表示只调整这一周的那一次课（「调课」按周生效）。
      */
     val scopeWeek: Int? = null,
     /**
@@ -57,6 +57,15 @@ internal class ScheduleOverrideStore(context: Context) {
     @Synchronized
     fun has(termCode: String, group: XmuScheduleGroup): Boolean =
         readAll().any { it.matchesAnchor(termCode, group) }
+
+    /**
+     * 这学期是否存在任意本地调整。
+     *
+     * 桌面组件按整学期投影（19 周 × 每天），没有调整时不该让每一周都去解析一遍存储：
+     * 调用方先用它挡一道，绝大多数用户（从未调过课）走纯投影路径。
+     */
+    @Synchronized
+    fun hasAny(termCode: String): Boolean = readAll().any { it.termCode == termCode }
 
     @Synchronized
     fun save(termCode: String, original: XmuScheduleGroup, value: ScheduleCourseOverride) {
@@ -271,6 +280,10 @@ internal class ScheduleWeekMoveStore(context: Context) {
     @Synchronized
     fun has(termCode: String, group: XmuScheduleGroup): Boolean =
         readAll().any { it.matchesAnchor(termCode, group) }
+
+    /** 这学期是否存在任意跨周搬课记录（组件投影前的快速判空，语义同 [ScheduleOverrideStore.hasAny]）。 */
+    @Synchronized
+    fun hasAny(termCode: String): Boolean = readAll().any { it.termCode == termCode }
 
     @Synchronized
     fun remove(termCode: String, original: XmuScheduleGroup): Boolean {

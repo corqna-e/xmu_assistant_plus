@@ -139,11 +139,13 @@ private fun RollcallCode(
 private data class ProgressPresentation(val first: String, val second: String, val reliable: Boolean)
 
 private fun progressPresentation(progress: StudentRollcallProgress?): ProgressPresentation {
-    if (progress == null || progress.total <= 0 || !progress.reliablePercentage || progress.percentage == null) {
+    // 分母就是名单条数，未签学生也在名单里；不因「有的行还没有状态」而隐藏进度，
+    // 否则进行中的签到会一直显示「暂未获取」。百分比在此按名单条数直接计算。
+    if (progress == null || progress.total <= 0) {
         return ProgressPresentation("签到进度", "暂未获取", false)
     }
-    val percent = progress.percentage.takeIf(Double::isFinite)
-        ?: return ProgressPresentation("签到进度", "暂未获取", false)
+    val percent = progress.present * 100.0 / progress.total
+    if (!percent.isFinite()) return ProgressPresentation("签到进度", "暂未获取", false)
     return ProgressPresentation(
         "${progress.present} / ${progress.total} 人",
         formatPercentage(percent),

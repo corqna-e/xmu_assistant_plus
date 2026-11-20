@@ -363,7 +363,7 @@ internal suspend fun fetchScheduleWithNetworkRetry(
     var lastFailure: Throwable? = null
     // 首次循环先建立会话（可能续登拿到新 cookie），成功后缓存 jwCookie：
     // - 后续重试直接复用已建立的会话，不再重复 ensureScheduleSession
-    //（网络抖动重试时省掉额外的会话初始化请求）；
+    //   （网络抖动重试时省掉额外的会话初始化请求）；
     // - 同时避免「会话过期 + 网络抖动」组合下一次手动刷新触发多次 CAS 登录。
     var jwCookie: String? = null
     repeat(3) { attempt ->

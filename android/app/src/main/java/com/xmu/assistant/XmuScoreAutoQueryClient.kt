@@ -130,7 +130,7 @@ class XmuScoreAutoQueryClient internal constructor(
         // 部分成绩项失败时，仅当存在「会话失效类」失败（ScoreSessionExpiredException）才重登重试；
         // 纯网络抖动（IOException）与格式异常（ScoreJsonFormatException）都保持失败：
         // - IOException：弱网时避免触发重复 CAS 登录
-        //- 格式异常（含 5xx/非鉴权 4xx/服务端坏页）：数据或服务问题，重登也无法修复，登录只会白打一次
+        //   - 格式异常（含 5xx/非鉴权 4xx/服务端坏页）：数据或服务问题，重登也无法修复，登录只会白打一次
         val reloginNeeded = firstWave.any { it.error is ScoreSessionExpiredException }
         val retriedByCode = if (failedTerms.isEmpty() || !reloginNeeded || !mayRelogin()) {
             emptyMap()
@@ -306,9 +306,9 @@ class XmuScoreAutoQueryClient internal constructor(
         }
         try {
             // 登录冷却（进程级）：服务端限流（登录页异常/登录失败）后短时间内不再尝试登录，
-            // 避免限流窗口内反复打 CAS 登录延长风控（2026-08-17 体检：403 循环 bug 曾导致
+            // 避免限流窗口内反复打 CAS 登录延长风控（体检：403 循环 bug 曾导致
             // 同账号短时间 20+ 次登录被 ids 限流，登录页不再返回表单）。
-            //时间源用 System.nanoTime：单调时钟（用户改系统时间无法绕过冷却，
+            // 时间源用 System.nanoTime()：单调时钟（用户改系统时间无法绕过冷却，
             // 且 JVM 单测可用——SystemClock 在 JVM 抛 not mocked）。
             if (loginCooldownActive(lastLoginBlockedAtNanos)) {
                 throw AcademicLoginBlockedException("教务登录请求过于频繁，请约 30 分钟后重试")
@@ -413,7 +413,7 @@ class XmuScoreAutoQueryClient internal constructor(
 
     private fun postForm(url: String, body: String): String {
         val response = follow(url, method = "POST", body = body)
-        // 风控红线：只有「真会话失效」（401/403/重定向到统一登录域/登录页特征）才判过期触发续登；
+        // 风控约束：只有「真会话失效」（401/403/重定向到统一登录域/登录页特征）才判过期触发续登；
         // 5xx、非鉴权 4xx、服务端坏页一律归为格式异常（ScoreJsonFormatException），绝不触发 CAS 重登。
         if (response.isScoreSessionExpired()) throw ScoreSessionExpiredException()
         if (response.code !in 200..299) throw ScoreJsonFormatException("成绩接口暂时不可用")
@@ -474,8 +474,7 @@ class XmuScoreAutoQueryClient internal constructor(
     private fun rowsFromDataBlock(text: String, blockName: String): List<JSONObject> {
         val root = runCatching {
             JSONTokener(text.trim().removePrefix("\uFEFF")).nextValue() as? JSONObject
-        }.getOrElse { error ->
-            Diagnostics.record("成绩", error, "成绩接口 JSON 解析（${text.length} 字符）")
+        }.getOrElse {
             throw ScoreJsonFormatException("成绩接口返回格式异常")
         } ?: return emptyList()
         val rows = root.optJSONObject("datas")
@@ -544,7 +543,7 @@ class XmuScoreAutoQueryClient internal constructor(
         private const val SCHEDULE_APP_ID = "4979568947762216"
 
         /** 登录被服务端拒绝/限流后的进程级冷却：窗口内不再尝试 CAS 登录（防反复打登录延长风控）。
-         *时间源 System.nanoTime：单调时钟，JVM 单测可用，用户改系统时间无法绕过。 */
+         *时间源 System.nanoTime()：单调时钟，JVM 单测可用，用户改系统时间无法绕过。 */
         @Volatile
         private var lastLoginBlockedAtNanos: Long? = null
 
@@ -591,7 +590,7 @@ internal class AcademicLoginBlockedException(message: String = "教务登录请�
 
 /**
  * 成绩接口「真会话失效」（401/403/重定向到统一登录域/登录页特征）。
- * 与格式/网络异常严格区分：**只有它允许触发 academic CAS 续登**（风控红线：
+ * 与格式/网络异常严格区分：**只有它允许触发 academic CAS 续登**（风控约束：
  * 5xx、非鉴权 4xx、服务端坏页、网络抖动绝不重登）。
  */
 internal class ScoreSessionExpiredException : IllegalStateException("成绩接口登录态失效")

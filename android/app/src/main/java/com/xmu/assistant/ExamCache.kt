@@ -53,7 +53,7 @@ internal object ExamCache {
             .putString(KEY_TERM, summary.termCode)
             .putLong(KEY_SAVED_EPOCH_DAY, java.time.LocalDate.now().toEpochDay())
         // 淘汰：学期槽只保留最近 MAX_TERM_SLOTS 个（多年累积不会无限膨胀）。
-        //注意并入本次新写入的 key：prefs.all 读的是 apply 前的快照，不含新键，
+        // 注意并入本次新写入的 key：prefs.all 读的是 apply() 前的快照，不含新键，
         // 否则新增第 13 个学期时 dropLast 删不到任何键、槽位上限失效。
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val termKeys = (prefs.all.keys + "$KEY_TERM_PREFIX${summary.termCode}")

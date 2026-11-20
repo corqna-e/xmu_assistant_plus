@@ -1,7 +1,5 @@
 package com.xmu.assistant
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
@@ -23,6 +21,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -61,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
@@ -99,8 +99,6 @@ internal fun TutorialPage(
     onRequestNotificationPermission: () -> Unit = {},
     /**右侧悬浮跳模块键的定位状态（由 MainScreen 持有）。 */
     jumpState: TutorialJumpState? = null,
-    /**复制诊断记录后的提示出口（走 App 内提示条，不用系统 Toast）。 */
-    show: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     // 滚动时更新当前模块，供右侧悬浮键判断上/下一条与边界禁用。
@@ -152,22 +150,6 @@ internal fun TutorialPage(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        // 诊断记录出口。此前解析失败被 runCatching 静默折叠成空列表，
-        // 开发者拿不到任何线索。这里一键复制最近 200 条。
-        PreviewCard(
-            onClick = {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                clipboard?.setPrimaryClip(ClipData.newPlainText("诊断记录", Diagnostics.snapshot()))
-                show("诊断记录已复制（${Diagnostics.count()} 条）")
-            },
-        ) {
-            PreviewListRow(
-                icon = R.drawable.ic_nav_help,
-                title = "复制诊断记录",
-                subtitle = "仅本机保存的接口解析失败记录，不含账号密码",
-                trailing = { PrivacyText("›", style = MaterialTheme.typography.headlineSmall) },
-            )
-        }
         // 运行环境检查卡重做 —— 与页面其它白卡统一（去掉浅蓝整卡与 1.5dp 粗描边），
         // 用「计数 + 细进度条 + 单行状态」替代层层嵌套的彩色块；明细展开后仍逐项可跳设置。
         // 不用 PreviewCard 的统一 contentPadding/spacing —— 需要四边不等的卡底留白
@@ -327,7 +309,7 @@ internal fun TutorialPage(
                                         AuditState.MANUAL -> PreviewBadge("需确认", PreviewBadgeTone.AMBER)
                                     }
                                     // 自启动没有系统查询接口，只能由用户在现场核对后手动确认；
-                                    //确认结果写入本机设置，进入本页时直接读回（v41）。
+                                    // 确认结果写入本机设置，进入本页时直接读回（v40/v41）。
                                     if (item.key == "autostart") {
                                         Surface(
                                             onClick = {
@@ -354,8 +336,8 @@ internal fun TutorialPage(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // 压掉 TextButton 的垂直内边距与 48dp 最小触摸下限
-                    // （LocalMinimumInteractiveComponentSize），行的上下空白改由
+                    // 压掉 TextButton 的垂直内边距与 48dp 最小触摸下限（的
+                    // LocalMinimumInteractiveComponentSize 姿势），行的上下空白改由
                     // 外层 top 16dp 与卡片底部留白（dp）控制。
                     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                         TextButton(
@@ -366,8 +348,8 @@ internal fun TutorialPage(
                     }
                     PrivacyText("上次检测 $checkedAtText", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                // 不显示「自启动已于 … 确认为允许 · 重新确认」记录行。
-                //撤销确认的唯一入口就是「重新检测」——重新检测本身就会作废确认，
+                // 已删：不再显示「自启动已于 … 确认为允许 · 重新确认」记录行。
+                // 撤销确认的唯一入口就是「重新检测」——重新检测本身就会作废确认，
                 // 两者功能重复，删掉这一行不损失任何能力。
             }
             }
@@ -403,10 +385,10 @@ internal fun TutorialPage(
         }
         val features = listOf(
             Triple(R.drawable.ic_nav_grid, "课表", "提供周课表与日程两种视图，可用右下角缩放条调整密度与字号；「调课」仅修改本机显示，可随时还原。"),
-            Triple(R.drawable.ic_nav_bell, "签到与自动处理", "按设定间隔轮询签到事件，数字签到、雷达签到等类型按策略提醒或自动处理；开启自动监控后仅在课程时段内运行，其余时间待机，签到记录在「签到」页查看。"),
+            Triple(R.drawable.ic_nav_bell, "签到与自动处理", "按设定间隔轮询签到事件，数字签到、雷达签到等类型按策略提醒或自动处理；开启自动监控后仅在课程时段内运行，其余时间待机，签到记录在「签到」页查看。自动处理未能完成、或名单里无法确认本人状态时，会弹出需手动确认的提醒（同一场签到只提醒一次）。"),
             Triple(R.drawable.ic_nav_location, "课程坐标", "维护雷达签到的课程地点，可从校区地点中选择，也可地图选点或教室现场采点。"),
             Triple(R.drawable.ic_nav_scores, "成绩与专业排名", "查询各学期成绩与绩点，支持模拟成绩预估与分享成绩长图；专业排名与绩点证明由成绩页进入。"),
-            Triple(R.drawable.ic_nav_folder, "课程课件", "按课程浏览与批量下载课件，统一保存到手机「下载 → xmu助手课件」文件夹，无需额外授权；平台未提供下载地址的资源仅保存入口。"),
+            Triple(R.drawable.ic_nav_folder, "课程课件", "按课程浏览与批量下载课件，统一保存到手机「下载 → xmu助手课件」文件夹，无需额外授权；平台未提供下载地址的资源仅保存入口。下载区的「检查」会扫描本机已下载的文件并补标为已下载；标记为已下载、本地却找不到文件的会显示「？已下载」，「取消」停止尚未开始的下载并清理未完成的残片。"),
             Triple(R.drawable.ic_nav_calendar, "考试安排与提醒", "查看考试时间与考场，可手动添加考试；可设置提前提醒分钟数与全屏提醒，准点触发依赖精确闹钟权限。"),
             Triple(R.drawable.ic_nav_home, "桌面小组件", "今日课程小卡片与周课表小部件均在「通知与外观」页添加，添加后随课表数据自动刷新。"),
             Triple(R.drawable.ic_nav_settings, "隐私模式", "在「通知与外观」开启后，页面文字随机替换为无意义内容以防旁人窥屏；桌面小组件不受影响。"),
@@ -490,6 +472,8 @@ internal fun NotificationSettingsPreviewPage(
     var qqRecipient by rememberSaveable { mutableStateOf(current.qqMailRecipient) }
     var qqPorts by rememberSaveable { mutableStateOf(current.qqMailPorts.ifBlank { "465,587" }) }
     var qqHost by rememberSaveable { mutableStateOf(current.qqMailHost) }
+    // 故障转移兜底开关（不属于 NotificationSettings，直接读写设置，改完立即生效）。
+    var failoverFullScreen by rememberSaveable { mutableStateOf(settings.rollcallFailoverFullScreen) }
     val invalidPorts = !smtpPortsValid(qqPorts)
     fun snapshot() = NotificationSettings(
         systemEnabled, pushEnabled, pushToken, qqEnabled, qqSender, qqPassword, qqRecipient,
@@ -526,6 +510,19 @@ internal fun NotificationSettingsPreviewPage(
         PreviewCard {
             ChannelHeader(R.drawable.ic_nav_bell, "本机通知", "签到、监控异常与考试提醒", systemEnabled) { systemEnabled = it }
             PreviewBadge("系统权限正常", PreviewBadgeTone.GREEN)
+        }
+        PreviewCard {
+            // 故障转移兜底：自动流程放弃（重试耗尽 / 本人状态无法判定）时要求人工确认。
+            // 锁屏全屏需要系统「全屏通知」授权，未授权时退化为高优先级横幅，提醒不丢。
+            SettingSwitch(
+                title = "自动失败时全屏提醒",
+                subtitle = "自动签到未能完成，或名单里无法确认本人状态时，弹出提醒要求手动确认并签到；同一场签到只提醒一次。",
+                checked = failoverFullScreen,
+                onChecked = {
+                    failoverFullScreen = it
+                    settings.rollcallFailoverFullScreen = it
+                },
+            )
         }
         PreviewCard {
             ChannelHeader(R.drawable.ic_nav_check, "微信 PushPlus", "把签到状态推送到微信", pushEnabled) { pushEnabled = it }
@@ -777,7 +774,7 @@ internal fun StrategyPreviewPage(
             )
         }
         // 原「自动签到策略」的两张卡片已合并进三级界面，二级页只留入口；
-        // 本入口与「课程坐标」同归「签到设置」分组。
+        // 按需求，本入口与「课程坐标」同归「签到设置」分组。
         PreviewSectionHeader("签到设置")
         PreviewCard(onClick = onOpenAutoSignInStrategy) {
             PreviewListRow(
@@ -1051,6 +1048,12 @@ internal fun CoursewarePreviewPage(
     downloadDirectoryPath: String = "",
     onOpenDownloadDirectory: () -> Unit = {},
     onRetryFailed: () -> Unit = {},
+    /**下载卡「检查」按钮：核对本地已落盘文件并补标记。 */
+    onCheckLocalFiles: () -> Unit = {},
+    /**下载卡「取消」按钮：停止尚未开始的下载并清理 .part。 */
+    onCancelDownload: () -> Unit = {},
+    /**「检查」扫出来「标记为已下载、但本地找不到文件」的课件 id，角标据此换成「？已下载」。 */
+    missingLocalIds: Set<String> = emptySet(),
     /**提示条出现时下载键临时上让（内容区底边就是底栏上沿，不需要长期留 146dp）。 */
     toastVisible: Boolean = false,
 ) {
@@ -1093,6 +1096,8 @@ internal fun CoursewarePreviewPage(
             onOpenDirectory = { onOpenDownloadDirectory() },
             onRetryFailed = onRetryFailed,
             directoryActionLabel = "打开下载目录",
+            onCheckLocalFiles = onCheckLocalFiles,
+            onCancelDownload = onCancelDownload,
         )
         Box(Modifier.fillMaxWidth().weight(1f)) {
         LazyColumn(
@@ -1237,8 +1242,13 @@ internal fun CoursewarePreviewPage(
                                 val count = coursewareCounts[course.id]
                                 val pendingNew = CoursewareStorage.pendingNewIds(context, course.id)
                                 val allDownloaded = courseItems.isNotEmpty() && courseItems.all { it.id in downloadedIds }
+                                // 课程内只要有一条「标记已下载但本地扫不到」，角标就不能算完成：
+                                // 换成淡橙底 + 暗橙字，提示这批里有文件对不上。
+                                val hasMissingLocal = courseItems.any { it.id in missingLocalIds }
                                 when {
                                     pendingNew.isNotEmpty() -> PreviewBadge("有新增课件·${pendingNew.size}条", PreviewBadgeTone.AMBER)
+                                    allDownloaded && hasMissingLocal ->
+                                        PreviewBadge("已全部下载·${courseItems.size}条", PreviewBadgeTone.ORANGE)
                                     allDownloaded -> PreviewBadge("已全部下载·${courseItems.size}条", PreviewBadgeTone.GREEN)
                                     count != null -> PreviewBadge("$count 条")
                                     prefetchRemaining > 0 -> PreviewBadge("抓取中…")
@@ -1289,6 +1299,7 @@ internal fun CoursewarePreviewPage(
                                                 checked = item.id in selectedIds,
                                                 onToggle = { onToggle(item.id) },
                                                 downloaded = item.id in downloadedIds,
+                                                missingLocal = item.id in missingLocalIds,
                                             )
                                         }
                                     }
@@ -1387,10 +1398,22 @@ private fun DownloadProgressPanel(
     onOpenDirectory: () -> Unit,
     onRetryFailed: () -> Unit = {},
     directoryActionLabel: String = "打开下载目录",
+    /**待下载态的「检查」：扫本地目录，把已存在的文件补标为已下载。 */
+    onCheckLocalFiles: () -> Unit = {},
+    /**下载中态的「取消」：停掉尚未开始的课件并清理 .part 残片。 */
+    onCancelDownload: () -> Unit = {},
 ) {
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     PreviewCard(contentPadding = 12.dp, spacing = 6.dp) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 状态徽标与右侧动作按钮统一为 30dp 高、至少 64dp 宽、同一套 labelSmall 粗体，
+        // 避免「待下载」小胶囊和「检查 / 取消」描边按钮看起来像两种尺寸的控件。
+        val pillModifier = Modifier
+            .height(30.dp)
+            .widthIn(min = 64.dp)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             PrivacyText(
                 "下载",
                 style = MaterialTheme.typography.titleSmall,
@@ -1398,9 +1421,29 @@ private fun DownloadProgressPanel(
                 modifier = Modifier.weight(1f),
             )
             when {
-                state.active -> PreviewBadge("进行中 ${state.completed}/${state.total}")
-                state.finished -> PreviewBadge("已完成", PreviewBadgeTone.GREEN)
-                else -> PreviewBadge("待下载")
+                state.active -> PreviewBadge("进行中 ${state.completed}/${state.total}", modifier = pillModifier)
+                state.finished -> PreviewBadge("已完成", PreviewBadgeTone.GREEN, pillModifier)
+                else -> PreviewBadge("待下载", modifier = pillModifier)
+            }
+            // 状态徽标右侧的动作位：空闲时可「检查」本地文件，下载中可「取消」。
+            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                Surface(
+                    onClick = if (state.active) onCancelDownload else onCheckLocalFiles,
+                    modifier = pillModifier,
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.Transparent,
+                    contentColor = themePrimary(),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        PrivacyText(
+                            if (state.active) "取消" else "检查",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                        )
+                    }
+                }
             }
         }
         if (state.total > 0) {

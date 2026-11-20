@@ -214,7 +214,7 @@ internal class RollcallSectionState(
                     }
                 }
             } finally {
-                //门释放提到协程最外层（NonCancellable）：与 refresh 同款防"门永久占用"
+                // 门释放提到协程最外层（NonCancellable）：与 refresh() 同款防"门永久占用"
                 withContext(kotlinx.coroutines.NonCancellable) {
                     requestGate.finish("rollcall_history")
                 }

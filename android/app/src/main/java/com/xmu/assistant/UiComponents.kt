@@ -49,7 +49,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -134,7 +137,7 @@ fun sendLocalTestNotification(activity: ComponentActivity) {
 
 /**
  * 当前是否深色（由 XmuMobileTheme 按 themeMode 决定：跟随系统 / 强制浅色 / 强制深色）。
- *所有 theme* 变体函数读取它而不是直接读 isSystemInDarkTheme，
+ * 所有 theme* 变体函数读取它而不是直接读 isSystemInDarkTheme()，
  * 这样用户手动选择主题后，课表格子/功能底色/警示色等全部跟随。
  */
 internal val LocalXmuDarkTheme = androidx.compose.runtime.staticCompositionLocalOf { false }
@@ -209,7 +212,7 @@ fun XmuMobileTheme(themeMode: String = THEME_MODE_SYSTEM, content: @Composable (
                 )
             }
         }
-        // 全局形状放大一级，让 M3 的 Button/Card/TextField/Chip/Dialog
+        // 方案一：全局形状放大一级，让 M3 的 Button/Card/TextField/Chip/Dialog
         // 与显式卡片（AppCardShape 18dp）落在同一套大圆角语言上。
         MaterialTheme(
             colorScheme = colorScheme,
@@ -250,6 +253,16 @@ internal fun themeSoftAmber(): Color =
 @Composable
 internal fun themeOnAmber(): Color =
     if (LocalXmuDarkTheme.current) Color(0xFFE0B886) else Color(0xFF8A6220)
+
+/** 「已下载但本地找不到文件」的淡橙底：比琥珀更偏暖，和「有新增课件」区分开。 */
+@Composable
+internal fun themeSoftOrange(): Color =
+    if (LocalXmuDarkTheme.current) Color(0xFF3A2A1D) else Color(0xFFFBEEE1)
+
+/** 「已下载但本地找不到文件」的暗橙字，深色下用亮橙保证深底可读。 */
+@Composable
+internal fun themeOnOrange(): Color =
+    if (LocalXmuDarkTheme.current) Color(0xFFE9A468) else Color(0xFFA85B15)
 
 @Composable
 internal fun themeSurface(): Color =
@@ -311,7 +324,7 @@ fun BrandHeader(
     // 一级页（底栏四页）不做字母遮蔽，只有二三级页才换成随机字母。
     primaryPage: Boolean = false,
 ) {
-    // 顶部栏与内容卡片用同一套「大圆角 + 柔和阴影 + 无硬描边」语言。
+    // 方案一：顶部栏与内容卡片用同一套「大圆角 + 柔和阴影 + 无硬描边」语言。
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -335,25 +348,36 @@ fun BrandHeader(
                 AppLogo(Modifier.size(34.dp), null)
             }
             Spacer(Modifier.width(12.dp))
-            // 一级页标题保持可读（首页在隐私模式下显示「首页」），只有下级页逐字换随机字母。
+            // 一级页标题保持可读，只有下级页逐字换随机字母。
+            // 首页标题独立于隐私模式：默认「首页」，点一下换成「厦大助手」，再点切回。
+            // 离开首页再回来时回到「首页」（key 带上 page，切页即重置）。
+            var homeAliasShown by remember(page) { mutableStateOf(false) }
             val privacy = LocalPrivacyMode.current
             val rawTitle = titleOverride ?: if (page == Page.HOME) "厦大助手" else pageTitle(page)
+            val homeTitleToggle = titleOverride == null && page == Page.HOME
             val shownTitle = when {
-                privacy && page == Page.HOME -> "首页"
+                homeTitleToggle -> if (homeAliasShown) rawTitle else "首页"
                 privacy && !primaryPage -> privacyTitle(rawTitle, true)
                 else -> rawTitle
             }
-            PrivacyText(
-                //标题走 pageTitle，与底栏／更多页入口名保持一致
-                // （此前底栏已改「设置」，顶部却仍显示内部页面 id「策略」）。
-                shownTitle,
-                modifier = Modifier.weight(1f),
-                color = themePrimary(),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                // 一级页标题用于定位当前页，与底栏一致保留「课」字（否则「？表」认不出）。
-                skipRules = if (primaryPage) setOf("课") else emptySet(),
-            )
+            // 点击区域限定在标题文字本身，右侧留白不响应，避免误触。
+            Box(Modifier.weight(1f)) {
+                PrivacyText(
+                    // 标题走 pageTitle()，与底栏／更多页入口名保持一致
+                    // （此前底栏已改「设置」，顶部却仍显示内部页面 id「策略」）。
+                    shownTitle,
+                    modifier = if (homeTitleToggle) {
+                        Modifier.clickable { homeAliasShown = !homeAliasShown }
+                    } else {
+                        Modifier
+                    },
+                    color = themePrimary(),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    // 一级页标题用于定位当前页，与底栏一致保留「课」字（否则「？表」认不出）。
+                    skipRules = if (primaryPage) setOf("课") else emptySet(),
+                )
+            }
             Surface(
                 color = if (loggedIn) themeSoftGreen() else themeSoftRed(),
                 shape = RoundedCornerShape(999.dp),
@@ -576,7 +600,7 @@ fun EmptyState(title: String, body: String) {
 }
 
 /**
- *瞬时提示级别（B4 显式化）：show 默认 INFO；showWarning/showError 显式标注，
+ * 瞬时提示级别（B4 显式化）：show() 默认 INFO；showWarning/showError 显式标注，
  * 文案子串匹配（"失败"/"请先"）仅作未迁移调用点的兜底，保留不删。
  * WARNING/ERROR 共用 errorContainer 视觉（历史 warning 二态样式不变）。
  */
@@ -876,6 +900,8 @@ fun CoursewareItemCard(
     onToggle: () -> Unit,
     /**该课件曾成功落盘（持久化标记），显示「已下载」。 */
     downloaded: Boolean = false,
+    /**「检查」扫到标记已下载、但本地目录里没有该文件：角标改「？已下载」暗橙字。 */
+    missingLocal: Boolean = false,
 ) {
     val failed = item.downloadStatus.startsWith("下载失败")
     InfoCard(container = if (failed) themeFailedCard() else MaterialTheme.colorScheme.surface) {
@@ -920,13 +946,15 @@ fun CoursewareItemCard(
                     if (downloaded) {
                         // 「已下载」是完成态，用成功绿；原来的品牌深蓝与正文蓝色同族，
                         // 在浅底上一眼分不出「可下载」和「已下载」。
+                        // 检查发现本地文件不在（被挪走/改名/删掉）时换成暗橙的「？已下载」，
+                        // 提示这条标记不可靠；下载标记本身不动，重新下载或扫到文件即恢复。
                         // 靠右贴边，且末字「载」与课程行角标末字「条」同列。
                         // 实测量得（1200×2664 / 520dpi）：卡片内容右缘 1080px，角标「条」墨迹右缘 1026px，
                         // 差 54px ≈ 17dp —— 这里就用 17dp 右侧内缩把这 17dp 让出来。
                         PrivacyText(
-                            "✓ 已下载",
+                            if (missingLocal) "？已下载" else "✓ 已下载",
                             style = MaterialTheme.typography.labelSmall,
-                            color = themeSuccess(),
+                            color = if (missingLocal) themeOnOrange() else themeSuccess(),
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             modifier = Modifier.padding(end = 17.dp),
@@ -1078,6 +1106,27 @@ fun requestScheduleWidget(context: Context): Boolean {
 }
 
 /**
+ * 构造「按周解析本地调整」的回调，供组件投影使用。
+ *
+ * 组件数据（`ScheduleWidgetData` / `ScheduleWeekWidgetData`）只存投影结果，
+ * 而调课、跨周搬课、单周停课都存在本机偏好里，投影时必须显式套一遍，
+ * 否则桌面上永远显示教务原始安排。本学期一条调整都没有时直接返回 null，
+ * 让投影走零开销的原路径。
+ */
+internal fun scheduleWidgetWeekResolver(
+    context: Context,
+    termCode: String,
+): ScheduleWeekGroupResolver? {
+    if (termCode.isBlank()) return null
+    val overrides = ScheduleOverrideStore(context)
+    val moves = ScheduleWeekMoveStore(context)
+    if (!overrides.hasAny(termCode) && !moves.hasAny(termCode)) return null
+    return { groups, week ->
+        resolveWeekPairs(groups, termCode, week, overrides, moves).map { it.second }
+    }
+}
+
+/**
  * 课表刷新成功后同步桌面 Widget 的「今日课程」摘要，并通知所有 Widget 更新。
  * 与课表页一致：反推/校准结果优先，官方表兜底；手动周次只是校准基准，
  * 校准成功后按日期自动推进，仅当校准反推失败时才以手动周次兜底。
@@ -1092,14 +1141,21 @@ fun syncScheduleWidget(
     val calendar = inferredCalendar ?: xmuAcademicCalendarForTerm(termCode)
     // 手动周次只是校准基准：有反推日历时不参与，避免两套周次互相打架。
     val effectiveManualWeek = if (inferredCalendar == null) manualWeek else 0
+    // 本地调课 / 搬课也要进组件，否则联网刷新后又回到教务原始安排。
+    val resolveWeek = scheduleWidgetWeekResolver(context, termCode)
     val days = projectScheduleWidgetDays(
         entries, termCode, calendar,
         manualWeek = effectiveManualWeek,
+        resolveWeek = resolveWeek,
     )
     ScheduleWidgetData.saveUpcoming(context, days)
     ScheduleWidgetProvider.refreshAll(context)
     // 周课表小组件一次投影整学期各周，供桌面左右箭头翻周；当前周仍落在 KEY_JSON。
-    val weekBundle = projectScheduleWeekWidgetBundle(entries, termCode, calendar, manualWeek = effectiveManualWeek)
+    val weekBundle = projectScheduleWeekWidgetBundle(
+        entries, termCode, calendar,
+        manualWeek = effectiveManualWeek,
+        resolveWeek = resolveWeek,
+    )
     val currentWeek = if (effectiveManualWeek in 1..(calendar?.totalWeeks ?: 19)) {
         effectiveManualWeek
     } else {
@@ -1107,4 +1163,47 @@ fun syncScheduleWidget(
     }
     ScheduleWeekWidgetData.saveBundle(context, weekBundle, currentWeek)
     ScheduleWeekWidgetProvider.refreshAll(context)
+}
+
+/**
+ * 不联网、只按「缓存课表 + 本地调整」重投两个桌面组件。
+ *
+ * 调课 / 修改安排 / 还原 / 单周停课改的都是本机数据，不会触发教务刷新，
+ * 此前这些动作做完后桌面上要等下一次联网同步才更新（大多数时候永远不更新）。
+ * 现在这几个提交点做完就立刻重投，桌面上看到的就是最新安排。
+ */
+internal fun refreshScheduleWidgetsFromCache(context: Context) {
+    val appContext = context.applicationContext
+    val snapshot = runCatching { loadScheduleSnapshotFromFile(appContext) }.getOrNull()
+        ?: return
+    if (snapshot.entries.isEmpty()) return
+    val termCode = snapshot.termCode
+    val settings = runCatching { AssistantSettings(appContext) }.getOrNull() ?: return
+    val inferred = snapshot.inferredCalendars[termCode]
+    val calendar = inferred ?: xmuAcademicCalendarForTerm(termCode)
+    val manualWeek = settings.manualAcademicWeek(termCode)
+    // 与 syncScheduleWidget 同一口径：有反推日历时不拿手动周次参与。
+    val effectiveManualWeek = if (inferred == null) manualWeek else 0
+    val resolveWeek = scheduleWidgetWeekResolver(appContext, termCode)
+    val days = projectScheduleWidgetDays(
+        snapshot.entries, termCode, calendar,
+        manualWeek = effectiveManualWeek,
+        resolveWeek = resolveWeek,
+    )
+    ScheduleWidgetData.saveUpcoming(appContext, days)
+    ScheduleWidgetProvider.refreshAll(appContext)
+    val totalWeeks = calendar?.totalWeeks ?: 19
+    val weekBundle = projectScheduleWeekWidgetBundle(
+        snapshot.entries, termCode, calendar,
+        manualWeek = effectiveManualWeek,
+        resolveWeek = resolveWeek,
+    )
+    val currentWeek = if (effectiveManualWeek in 1..totalWeeks) {
+        effectiveManualWeek
+    } else {
+        xmuAcademicWeekFor(calendar, java.time.LocalDate.now()).week ?: 0
+    }
+    // 编辑是局部改动，不要把用户在桌面翻到的周次打回当前周。
+    ScheduleWeekWidgetData.saveBundle(appContext, weekBundle, currentWeek, resetViewWeek = false)
+    ScheduleWeekWidgetProvider.refreshAll(appContext)
 }

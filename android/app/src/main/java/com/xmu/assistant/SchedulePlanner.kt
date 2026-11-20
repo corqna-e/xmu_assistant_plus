@@ -260,7 +260,7 @@ fun xmuTryInferCalendar(
     if (daysSinceStart !in 0L..windowDays) return null
     // 开学时间窗按学期类型区分：
     // - 秋季（...1）：9/1-10/15（虾大秋季开学均为 9 月初：9/1、9/2、9/7、9/11；
-    //暑假 currentZc 返回 1 时若窗口含 8 月会把 8 月误认为开学，必须排除）；
+    //   暑假 currentZc 返回 1 时若窗口含 8 月会把 8 月误认为开学，必须排除）；
     // - 夏季短学期（...3）：6/1-7/31（虾大短学期 6 月底-7 月底，8 月已在暑假）；
     // - 春季（...2）：1/15-4/30。
     val month = inferred.startDate.monthValue

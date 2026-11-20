@@ -53,7 +53,7 @@ fun refreshModuleForPage(page: Page): RefreshModule = when (page) {
 
 fun moduleFreshnessMillis(module: RefreshModule): Long = when (module) {
     RefreshModule.ROLLCALL -> 15_000L
-    // 成绩：用户拍板由 120s 放宽到 5 分钟（2026-08-24 真机联调），与历史签到窗对齐
+    // 成绩：用户拍板由 120s 放宽到 5 分钟（真机联调），与历史签到窗对齐
     RefreshModule.SCORES -> 300_000L
     RefreshModule.COURSES -> 300_000L
     RefreshModule.NONE -> 0L
@@ -84,7 +84,7 @@ class ForegroundModuleRefreshTracker {
     /**
      * 是否需要刷新。仅在模块缓存过期（超过 freshness 窗口）时才返回 true；
      * 切换标签不会无条件触发网络请求，避免浪费流量和等待。
-     *手动刷新按钮直接调用 refreshXxx，不走这里，天然是强制的。
+     * 手动刷新按钮直接调用 refreshXxx()，不走这里，天然是强制的。
      */
     fun shouldRefresh(
         module: RefreshModule,
