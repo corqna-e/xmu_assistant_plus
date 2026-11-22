@@ -1,7 +1,7 @@
 package com.xmu.assistant
 
 /**
- * 内部错误码（v112）。
+ * 内部错误码。
  *
  * 这些字符串不是给用户看的文案，而是模块之间传递的**协议值**：网络层 throw，
  * SectionState 转成 UI 状态，RefreshUiState / UiComponents 再按值映射成人话。

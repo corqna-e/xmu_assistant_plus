@@ -4,12 +4,12 @@
     <!-- 桌面小卡片配色：布局/背景一律引用资源，
          夜间变体见 values-night/colors.xml -->
     <color name="widget_background">#FFFFFF</color>
-    <!--对齐 App 新色板，主色调到中等明度学院蓝 #3369B0 -->
+    <!-- 主色为中等明度学院蓝 #3369B0 -->
     <color name="widget_stroke">#E4EBF4</color>
     <color name="widget_accent">#3369B0</color>
     <color name="widget_primary_text">#16283F</color>
     <color name="widget_secondary_text">#5E7189</color>
-    <!--明日课程行比次级文字再淡一档（alpha 0xB3），其它位置不受影响。 -->
+    <!-- 明日课程行比次级文字再淡一档（alpha 0xB3），其它位置不受影响。 -->
     <color name="widget_tomorrow_text">#B35E7189</color>
 
     <!--小组件专用固定色板。刻意放在 values/ 而不是 values-night/，
@@ -30,4 +30,7 @@
     <color name="widget_dark_tomorrow">#B3A7B8CC</color>
     <!--深色模式下 chip 底是浅蓝，必须用深字，否则白字在浅底上几乎看不见。 -->
     <color name="widget_dark_on_chip">#16283F</color>
+    <!--考试固定暗红：与 App 内日程 / 明日课程卡里的考试块同一套，不参与课名散列配色。 -->
+    <color name="widget_light_exam_ink">#8E1B1B</color>
+    <color name="widget_dark_exam_ink">#E08282</color>
 </resources>

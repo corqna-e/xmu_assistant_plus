@@ -36,6 +36,8 @@ internal data class WidgetCourseDetail(
     val location: String,
     val teachers: String,
     val isAdjusted: Boolean,
+    /**该条是考试（考试安排并入日程）。详情里不显示「周次」「教师」，地点叫考场。 */
+    val isExam: Boolean = false,
 ) {
     fun toJson(): String = JSONObject().apply {
         put("n", courseName)
@@ -48,6 +50,7 @@ internal data class WidgetCourseDetail(
         put("loc", location)
         put("t", teachers)
         put("adj", isAdjusted)
+        put("ex", isExam)
     }.toString()
 
     companion object {
@@ -64,6 +67,7 @@ internal data class WidgetCourseDetail(
                 location = obj.optString("loc"),
                 teachers = obj.optString("t"),
                 isAdjusted = obj.optBoolean("adj"),
+                isExam = obj.optBoolean("ex", false),
             )
         }.getOrNull()
     }
@@ -80,6 +84,7 @@ internal fun ScheduleWidgetCourse.toDetail(): WidgetCourseDetail = WidgetCourseD
     location = location,
     teachers = teachers,
     isAdjusted = isAdjusted,
+    isExam = isExam,
 )
 
 internal object WidgetDetailOverlay {
@@ -391,12 +396,22 @@ internal fun applyDetailOverlay(
         R.id.detail_section,
         "节次：${detail.startSection}—${detail.endSection}节",
     )
-    views.setTextViewText(R.id.detail_weeks, "周次：${detail.weeks.ifBlank { "未标注" }}")
-    views.setTextViewText(
-        R.id.detail_room,
-        "教室：${detail.location.replace('\n', ' ').ifBlank { "未标注" }}",
-    )
-    views.setTextViewText(R.id.detail_teacher, "教师：${detail.teachers.ifBlank { "未标注" }}")
+    // 考试没有周次与教师：硬套「周次：考试」字段名与内容对不上，地点也该叫考场。
+    if (detail.isExam) {
+        views.setTextViewText(R.id.detail_weeks, "考试")
+        views.setTextViewText(
+            R.id.detail_room,
+            "考场：${detail.location.replace('\n', ' ').ifBlank { "未标注" }}",
+        )
+        views.setViewVisibility(R.id.detail_teacher, View.GONE)
+    } else {
+        views.setTextViewText(R.id.detail_weeks, "周次：${detail.weeks.ifBlank { "未标注" }}")
+        views.setTextViewText(
+            R.id.detail_room,
+            "教室：${detail.location.replace('\n', ' ').ifBlank { "未标注" }}",
+        )
+        views.setTextViewText(R.id.detail_teacher, "教师：${detail.teachers.ifBlank { "未标注" }}")
+    }
 
     // 点卡片本体不关，点遮罩或「关闭」才退出。
     views.setOnClickPendingIntent(

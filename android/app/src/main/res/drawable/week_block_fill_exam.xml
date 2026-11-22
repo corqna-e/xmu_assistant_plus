@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--周课表小组件：考试块底色。淡暗红（App 内 examInk #8E1B1B，alpha 0x1E），
+    与课程块同一套圆角/内缩，靠色相区分「这是考试」。 -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="1.5dp" android:insetRight="1.5dp"
+    android:insetTop="1dp" android:insetBottom="1dp">
+    <shape android:shape="rectangle">
+    <solid android:color="#1E8E1B1B" />
+    <corners android:radius="4dp" />
+    </shape>
+</inset>

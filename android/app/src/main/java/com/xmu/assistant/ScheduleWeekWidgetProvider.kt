@@ -172,9 +172,11 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
             val storedView = ScheduleWeekWidgetData.getViewWeek(context)
             // 翻到的周必须真的有这一周的记录，否则退回当前周 —— 免得整张卡片空着。
             val viewWeek = if (storedView in 1..30 && bundle.any { it.week == storedView }) storedView else currentWeek
-            val snapshot = bundle.firstOrNull { it.week == viewWeek }
+            // 考试（教务 + 自定义）也要上图：周课表快照只有课程，渲染前按周补一次。
+            val (exams, customExams) = loadExamsForWidget(context)
+            val snapshot = (bundle.firstOrNull { it.week == viewWeek }
                 ?: bundle.firstOrNull { it.week == currentWeek }
-                ?: bundle.firstOrNull()
+                ?: bundle.firstOrNull())?.withExams(exams, customExams)
             // 只有「跟随当前周」时才做日期新鲜度校验；主动翻到的周不校验。
             val renderWeek = if (viewWeek == currentWeek) 0 else viewWeek
             val today = java.time.LocalDate.now()
@@ -199,7 +201,7 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
          *
          * 为什么不用 Canvas 位图：位图必须知道卡片的确切像素尺寸才能 1:1 铺满，
          * 而桌面只上报一个 min/max 区间（本机 206/284，实际卡片比两者都高）。
-         * 比例对不上时 fitCenter 一侧留白、fitXY 把字拉扁，v69~v73 都栽在这里。
+         * 比例对不上时 fitCenter 一侧留白、fitXY 把字拉扁。
          * 现在高度/宽度全部由 layout_weight 分配，任何尺寸都自然铺满且零缩放。
          */
         private fun buildWeekViews(
@@ -285,7 +287,7 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
                 views.setTextColor(HEAD_DATE_IDS[index], if (isToday) onChip else secondary)
             }
 
-            // —— 左侧节次列：节号在上、起始时间在下，11 格等分高度（恢复）——
+            // —— 左侧节次列：节号在上、起始时间在下，11 格等分高度 ——
             val windows = officialSectionWindows()
             for (section in 1..11) {
                 views.setTextViewText(TIME_SECTION_IDS[section - 1], section.toString())
@@ -309,7 +311,10 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
                     },
                 )
                 var row = 1
-                val courses = snapshot.days.getOrNull(day).orEmpty().sortedBy { it.startSection }
+                val courses = snapshot.days.getOrNull(day).orEmpty()
+                    // 重叠时考试优先占格：考试占的就是那一格时间，
+                    // 课程被跳过总比考试完全不显示更容易被接受。
+                    .sortedWith(compareBy({ it.startSection }, { if (it.isExam) 0 else 1 }))
                 for (course in courses) {
                     val start = course.startSection.coerceIn(1, 11)
                     val end = course.endSection.coerceIn(start, 11)
@@ -342,14 +347,30 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
             palette: WidgetPalette,
         ): RemoteViews {
             val views = RemoteViews(context.packageName, BLOCK_LAYOUT_IDS[span - 1])
-            val index = scheduleCourseColorIndex(course.courseName)
-            views.setInt(R.id.week_block_root, "setBackgroundResource", palette.blockFills[index])
-            views.setInt(R.id.week_block_bar, "setBackgroundResource", BLOCK_BAR_IDS[index])
-            val argb = SCHEDULE_COLOR_PALETTE[index].toArgb()
+            // 色号优先用快照里投影好的（按整学期邻接分配），旧快照才回退课名散列。
+            val index = if (course.colorIndex in SCHEDULE_COLOR_PALETTE.indices) {
+                course.colorIndex
+            } else {
+                scheduleCourseColorIndex(course.courseName)
+            }
+            // 考试不按课名散列配色：固定暗红，与 App 内日程的考试块、今日组件同一口径。
+            views.setInt(
+                R.id.week_block_root, "setBackgroundResource",
+                if (course.isExam) palette.examBlockFill else palette.blockFills[index],
+            )
+            views.setInt(
+                R.id.week_block_bar, "setBackgroundResource",
+                if (course.isExam) palette.examBlockBar else BLOCK_BAR_IDS[index],
+            )
+            val argb = if (course.isExam) {
+                if (dark) 0xFFE08282.toInt() else 0xFF8E1B1B.toInt()
+            } else {
+                SCHEDULE_COLOR_PALETTE[index].toArgb()
+            }
             // 课名在淡色块上偏淡，单独加深一档（更实、更清楚）；地点沿用原色，
             // 只让课名承担视觉重点，其余位置不动。
-            // 暗色下地点原先混白 0.45、课名只混白 0.28，反而地点更亮 —— 
-            // 「课程名不如地点明显」。现在让课名成为最亮的一层，地点退回次要亮度。
+            // 暗色下地点原先混白 0.45、课名只混白 0.28，反而地点更亮；
+            // 现在让课名成为最亮的一层，地点退回次要亮度。
             val nameColor = if (dark) blendWithWhite(argb, 0.58f) else blendWithBlack(argb, 0.40f)
             val locColor = if (dark) blendWithWhite(argb, 0.32f) else argb
             views.setTextColor(R.id.week_block_name, nameColor)
@@ -360,7 +381,13 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
             val fullName = span >= 4
             val nameText = if (fullName) course.courseName else
                 course.courseName.let { if (it.length > 8) it.take(8) + "\u2026" else it }
-            views.setTextViewText(R.id.week_block_name, if (course.isAdjusted) "[调]$nameText" else nameText)
+            views.setTextViewText(
+                R.id.week_block_name,
+                buildString {
+                    if (course.isAdjusted) append("[调]")
+                    if (course.isExam) append("[考]")
+                } + nameText,
+            )
             // 地点一律完整显示 —— 不省略、不隐藏，由 TextView 按列宽自动换行。
             // fullName 的行数按跨度放宽到 4~10 行（wrap_content，只作上限不占额外高度）。
             val nameLines = when {
@@ -387,8 +414,8 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
         }
 
         /** 地点：删「楼」字、多教室合并；「无教室信息」按小组件约定显示成「无」。
-         *不做字数截断，交给 TextView 自动换行完整显示。
-         *撤销 的「右括号后强制换行」—— 地点区只有两行空间，
+         * 不做字数截断，交给 TextView 自动换行完整显示。
+         * 不做「右括号后强制换行」—— 地点区只有两行空间，
          *主动换行会让「学武(1号)A401」变三行、直接显示不下。靠 8dp 字号自然折行即可。 */
         private fun weekBlockLocation(course: ScheduleWidgetCourse): String {
             val text = course.location

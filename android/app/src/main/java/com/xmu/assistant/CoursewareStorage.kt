@@ -20,7 +20,7 @@ internal const val COURSEWARE_FOLDER_NAME = "xmu助手课件"
 /**
  * 课件保存目录（重做）。
  *
- * v18~v49 走 Storage Access Framework：点「下载」先弹引导，让用户选一次目录并点
+ * 下载走 Storage Access Framework：点「下载」先弹引导，让用户选一次目录并点
  * 「允许使用此文件夹」，课件写进授权目录。实机反馈这套流程有两大问题：
  * 一次下载的文件被劈成两处（授权目录一份、公共下载一份），用户找不到；
  * 而 Android 10 起其实根本不需要授权 —— 应用可以通过 MediaStore 往公共

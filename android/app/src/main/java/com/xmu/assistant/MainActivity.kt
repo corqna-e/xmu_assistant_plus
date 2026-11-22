@@ -74,6 +74,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val warmSettings = runCatching { AssistantSettings(this@MainActivity) }.getOrNull()
             ScheduleWidgetSyncWorker.scheduleDaily(applicationContext)
+            // 旧版本生成的桌面快照没有课程色号，组件会回退课名散列，与 App 内的配色对不上。
+            // 冷启动时补一次重建（读缓存课表在 IO 线程投影，不联网）。
+            runCatching {
+                if (scheduleWidgetSnapshotsNeedColorRefresh(applicationContext)) {
+                    refreshScheduleWidgetsFromCache(applicationContext)
+                }
+            }
             if (warmSettings != null && warmSettings.scoreCookieHeader.isNotBlank()) {
                 runCatching {
                     XmuScoreAutoQueryClient(
@@ -195,7 +202,7 @@ fun XmuAssistantApp(
     var toolReturnPage by rememberSaveable { mutableStateOf(Page.MORE) }
     // 设置下的下一级界面（当前周次 / 自动签到策略 / 考试提醒时间 / 课程坐标）
     // 返回目标原先写死是「策略」。这些页现在有两个入口 —— 设置页逐级点进来，或首页卡片直接
-    // 进入（v94）—— 所以要记住真实来源页（首页进→回首页，设置进→回设置，课表进→回课表）。
+    // 进入 —— 所以要记住真实来源页（首页进→回首页，设置进→回设置，课表进→回课表）。
     var nestedReturnPage by rememberSaveable { mutableStateOf(Page.SETTINGS) }
     // 桌面小组件点开时要求落到指定视图（今日课程卡 → 日程，周课表卡 → 周课表）。
     // 用「值 + 自增序号」下发给课表页，序号变化才应用一次，普通重组不会反复覆盖用户的切换。
@@ -925,7 +932,7 @@ fun XmuAssistantApp(
     // —— 每次进入客户端（冷启动 / 从后台回到前台）全量刷新一次，45 分钟节流 ——
     // 「进入客户端自动刷新所有界面数据，进入单页面就不自动刷新」。
     // 串行错峰 800ms：多模块同时发起 academic CAS 续登会打两个身份域。
-    // 修复「第一次登录不自动刷新」两处根因：
+    // 「第一次登录不自动刷新」的两处根因：
     //  1) 旧节流用 SystemClock.elapsedRealtime()，进程重启会归零，而 rememberSaveable
     //     里存的是上个进程的大数 → now-last 为负 → 被误判成「刚刷过」，冷启动直接跳过；
     //  2) 旧 LaunchedEffect 只在 loggedIn 变化时跑一次，那一刻往往仍在
@@ -989,7 +996,7 @@ fun XmuAssistantApp(
     LaunchedEffect(startupStartGeneration, startupSessionReady, sessionUsable) {
         if (startupStartGeneration == 0 || !startupSessionReady || !sessionUsable) return@LaunchedEffect
         // 首次登录（含冷启动自动续登）绕过节流，保证第一次进来就有数据；
-        // 同时等网络就绪再发第一个请求（v40）。
+        // 同时等网络就绪再发第一个请求。
         val firstLogin = !wasLoggedIn
         refreshAllModulesOnEntry(force = firstLogin, waitForNetwork = firstLogin)
         wasLoggedIn = true

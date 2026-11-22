@@ -65,7 +65,7 @@ package com.xmu.assistant
  * 12. courseware_storage    【明文】课件下载目录/进度等本地状态。
  * 13. permission_audit      【明文】使用指南里「自启动已确认」的人工确认时间。
  * 14. map_usage_guard       【明文】地图选点每日次数闸门（纯本地限额，不含位置）。
- * 15. xmu_storage_flags     【明文】v112 Keystore 失效自愈的一次性提示标记。
+ * 15. xmu_storage_flags     【明文】Keystore 失效自愈的一次性提示标记。
  */
 internal object PrefStores {
     /** 登记锚：登记表里出现的文件名必须真有代码在用，改名/删除请同步本表。 */

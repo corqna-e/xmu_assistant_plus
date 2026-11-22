@@ -212,7 +212,7 @@ fun XmuMobileTheme(themeMode: String = THEME_MODE_SYSTEM, content: @Composable (
                 )
             }
         }
-        // 方案一：全局形状放大一级，让 M3 的 Button/Card/TextField/Chip/Dialog
+        // 全局形状放大一级，让 M3 的 Button/Card/TextField/Chip/Dialog
         // 与显式卡片（AppCardShape 18dp）落在同一套大圆角语言上。
         MaterialTheme(
             colorScheme = colorScheme,
@@ -277,6 +277,14 @@ internal fun themePrimarySoft(): Color =
 internal fun themeWarning(): Color =
     if (LocalXmuDarkTheme.current) Color(0xFFFF8A80) else Color(0xFFC6382B)
 
+/**
+ * 考试的固定强调色（暗红）：考试不参与课程散列配色，同一场考试在各视图里保持同色。
+ * 深色模式提亮，保证深底上可读；周课表组件的色条 / 底色与此同源。
+ */
+@Composable
+internal fun examAccent(): Color =
+    if (LocalXmuDarkTheme.current) Color(0xFFE08282) else Color(0xFF8E1B1B)
+
 /** 成功文字色：深色模式下用更亮的绿，保证深底上的可读性。 */
 @Composable
 internal fun themeSuccess(): Color =
@@ -324,7 +332,7 @@ fun BrandHeader(
     // 一级页（底栏四页）不做字母遮蔽，只有二三级页才换成随机字母。
     primaryPage: Boolean = false,
 ) {
-    // 方案一：顶部栏与内容卡片用同一套「大圆角 + 柔和阴影 + 无硬描边」语言。
+    // 顶部栏与内容卡片用同一套「大圆角 + 柔和阴影 + 无硬描边」语言。
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -522,7 +530,7 @@ fun RefreshStateBanner(
 }
 
 /**
- *底部纵向账本。
+ * 底部纵向账本。
  * 底栏 81dp（1dp 分隔线 + 80dp NavigationBar）+ 6dp 间隙 = 87dp → 提示条底距；
  * 提示条实测高约 48dp，再加 11dp 间隙 → 悬浮控件（下载键/缩放条）底距 146dp。
  */
@@ -823,7 +831,7 @@ fun ScoreRecordCard(record: XmuScoreRecord) {
 private val ExcellentGradeTexts = setOf("A+", "A", "A-", "优", "优秀")
 
 /** 百分制 ≥90 或等级制拿到 A/优，都用成功色高亮；其余（含 P/NP）用主题色。
- *等级制补绩点后 countsForStatistics 会变 true，不能再拿它当
+ * 等级制补绩点后 countsForStatistics 会变 true，不能再拿它当
  *「是否等级制」的判据，否则 A 会失去绿色高亮。 */
 fun scoreIsExcellent(record: XmuScoreRecord): Boolean =
     (record.score ?: 0.0) >= 90.0 || scoreResultText(record) in ExcellentGradeTexts
@@ -1206,4 +1214,41 @@ internal fun refreshScheduleWidgetsFromCache(context: Context) {
     // 编辑是局部改动，不要把用户在桌面翻到的周次打回当前周。
     ScheduleWeekWidgetData.saveBundle(appContext, weekBundle, currentWeek, resetViewWeek = false)
     ScheduleWeekWidgetProvider.refreshAll(appContext)
+    markScheduleWidgetColorSchemeApplied(appContext)
+}
+
+/**
+ * 配色方案版本：色板或分配规则一变就 +1，启动时据此重建组件快照。
+ *
+ * 1 = 按课表邻接着色；2 = 再把「同一天按节次排下来前后相邻」也算相邻
+ * （3-4 节与 7-8 节中间空一段的情况，此前会被判成不相邻而允许同色）。
+ * 色号算法改了但不重建快照的话，桌面会一直用旧色号，和 App 对不上。
+ */
+internal const val SCHEDULE_COLOR_SCHEME_VERSION = 2
+
+private const val COLOR_SCHEME_PREFS = "schedule_widget_color"
+private const val COLOR_SCHEME_KEY = "applied_version"
+
+internal fun markScheduleWidgetColorSchemeApplied(context: Context) {
+    context.getSharedPreferences(COLOR_SCHEME_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putInt(COLOR_SCHEME_KEY, SCHEDULE_COLOR_SCHEME_VERSION)
+        .apply()
+}
+
+/**
+ * 桌面快照是否还是「不含课程色号」的旧格式，或由旧的配色规则生成。
+ *
+ * 色号随快照下发（`colorIndex`）；更早生成的快照没有这个字段，组件只能回退
+ * 课名散列，于是「App 里相邻课已经分开、桌面还在撞色」。启动时据此判断要不要重建一次。
+ */
+internal fun scheduleWidgetSnapshotsNeedColorRefresh(context: Context): Boolean {
+    val applied = context.getSharedPreferences(COLOR_SCHEME_PREFS, Context.MODE_PRIVATE)
+        .getInt(COLOR_SCHEME_KEY, 0)
+    if (applied != SCHEDULE_COLOR_SCHEME_VERSION) return true
+    fun missing(course: ScheduleWidgetCourse) = !course.isExam && course.colorIndex < 0
+    val today = runCatching { ScheduleWidgetData.load(context) }.getOrNull()
+    if (today?.courses?.any(::missing) == true) return true
+    val week = runCatching { ScheduleWeekWidgetData.load(context) }.getOrNull()
+    return week?.days?.any { day -> day.any(::missing) } == true
 }

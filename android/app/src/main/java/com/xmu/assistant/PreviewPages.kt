@@ -309,7 +309,7 @@ internal fun TutorialPage(
                                         AuditState.MANUAL -> PreviewBadge("需确认", PreviewBadgeTone.AMBER)
                                     }
                                     // 自启动没有系统查询接口，只能由用户在现场核对后手动确认；
-                                    // 确认结果写入本机设置，进入本页时直接读回（v40/v41）。
+                                    // 确认结果写入本机设置，进入本页时直接读回。
                                     if (item.key == "autostart") {
                                         Surface(
                                             onClick = {

@@ -54,7 +54,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -96,15 +98,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 收起态；步进 56dp → 46dp；再收到 44dp。
+ * 收起态步进 44dp（由 56dp 收到 46dp，再收到 44dp）。
  *只压缩「课名下方到下一张卡顶端」的空白，文字位置始终不动。
  * 几何账：
  *12dp 上内边距 + 24dp 课名行 + 8dp 下方空白 = 44dp。
- * 上方仍是 12dp（与 平铺一致），下方 20dp → 10dp → 8dp，即下方卡片再上移 2dp。
+ * 上方仍是 12dp（与平铺态一致），下方 20dp → 10dp → 8dp，即下方卡片再上移 2dp。
  * 收起态不再画结束时间那一行（见 AgendaCourseCard 的 showDetails），否则会切出半截 09:40。
  */
 private val AGENDA_STACK_STEP = 44.dp
-/**沿用 平铺时「已上课程置灰」的 0.5 半透明度，但只作用在整摞合成后的一层上。 */
+/**沿用平铺态「已上课程置灰」的 0.5 半透明度，但只作用在整摞合成后的一层上。 */
 private const val AGENDA_STACK_ALPHA = 0.5f
 
 /**
@@ -187,7 +189,7 @@ private fun EdgeZoomSlider(
 }
 
 /**
- *按需求再收一版 —— 整体缩到原来的一半左右、改成右下角的小卡片；
+ * 整体缩到原来的一半左右、改成右下角的小卡片；
  * 空闲时半透明（0.55），一碰立刻全不透明，停手 2 秒淡回半透明：
  * 既不会常年压着课表，也不至于要用时找不着。
  * 缩放值由 AssistantSettings 跨重启记住（本组件只负责展示与回调）。
@@ -393,7 +395,7 @@ internal fun SchedulePage(
     var selectedWeek by rememberSaveable(termCode) { mutableIntStateOf(defaultWeek) }
     var viewModeName by rememberSaveable { mutableStateOf(ScheduleViewMode.AGENDA.name) }
     // 周课表缩放：内部仍是真实缩放值，默认 0.75；
-    // UI 把这个默认点重标为「100%」（显示值 = gridScale / 0.75 * 100），
+    // UI 把这个默认点标为「100%」（显示值 = gridScale / 0.75 * 100），
     // 滑条范围 33%~150%（上限由 200% 收到 150%），用户看到的 100% 就是最合适的标准大小。
     // 缩放值存入加密设置，跨重启自动记住（rememberSaveable 只负责转屏恢复）。
     val appSettings = remember(context) { AssistantSettings(context) }
@@ -508,6 +510,16 @@ internal fun SchedulePage(
                 .filter { it.weekday == tomorrowWeekday }
                 .sortedBy { it.startTime }
         }
+    }
+    // 考试并入明日课程：考试只认「日期 + 时间」，与课表周次校准无关，
+    // 因此单独按「明天所在周的周一」换算（周日晚上看明天即下一周），与周课表同一套换算。
+    val tomorrowExamGroups = remember(entries, examEntries, customExamEntries, tomorrow) {
+        val weekStart = tomorrow.minusDays(tomorrow.dayOfWeek.value - 1L)
+        mergeExamsIntoWeek(weekStart, entries, examEntries, customExamEntries)
+            .filter { it.weekday == tomorrowWeekday }
+    }
+    val tomorrowDisplayGroups = remember(tomorrowGroups, tomorrowExamGroups) {
+        (tomorrowGroups + tomorrowExamGroups).sortedBy { it.startTime }
     }
 
     // ICS 导出走 cacheDir → FileProvider → 系统分享（日历/邮件应用均可导入）；
@@ -754,9 +766,15 @@ internal fun SchedulePage(
         )
     }
 
+    // 课程配色按整学期课表的邻接关系分配：同一门课在所有视图同色，
+    // 同时让相邻格子尽量不同色（纯课名散列只看课名，做不到这一点）。
+    val scheduleColors = remember(entries) {
+        scheduleColorMapForEntries(entries, SCHEDULE_COLOR_PALETTE.size)
+    }
     // 课表页自己接管滚动。外层共享的 verticalScroll 会把任何子视图一起滚走，
     // 悬浮缩放面板必须放在滚动容器之外，才能真正「锁定」在页面右下角。
     val pageScrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
+    CompositionLocalProvider(LocalScheduleColorMap provides scheduleColors) {
     Box(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -785,11 +803,23 @@ internal fun SchedulePage(
             selectedWeek = selectedWeek,
             totalWeeks = totalWeeks,
             currentWeek = academicWeek.week,
-            onWeekSelected = {
-                selectedWeek = it
+            onWeekSelected = { target, keepDay ->
+                // 日程里停在周日、按「下一周」时落到下周一：周日是本周最后一天，
+                // 往后一天就是下周一，再停在下周日等于原地跳过一整周。
+                // 只对「前进一周」生效。
+                val forwardFromSunday = keepDay && viewMode == ScheduleViewMode.AGENDA &&
+                    selectedDay == 7 && target == selectedWeek + 1
+                selectedWeek = target
                 selectedCourse = null
                 selectedBaseCourse = null
-                if (academicWeek.week == it) selectedDay = todayWeekday
+                when {
+                    // 逐周翻动保留当前星期几：下周一看「上一周」应落到本周一，
+                    // 不能因为本周是当前周就换成今天（今天是周日就跳到周日，等于没翻）。
+                    forwardFromSunday -> selectedDay = 1
+                    keepDay -> Unit
+                    // 周次下拉与「看本周」是定点跳转，落到今天。
+                    academicWeek.week == target -> selectedDay = todayWeekday
+                }
             },
         )
 
@@ -870,7 +900,7 @@ internal fun SchedulePage(
                 if (selectedIsCurrent && selectedDay == todayWeekday) {
                     ScheduleTomorrowCard(
                         tomorrow = tomorrow,
-                        groups = tomorrowGroups,
+                        groups = tomorrowDisplayGroups,
                         onCourseSelected = { group ->
                             selectedBaseCourse = group
                             selectedCourse = group
@@ -911,7 +941,7 @@ internal fun SchedulePage(
         // 只在周课表且本周有课时出现：日程视图没有缩放，空态也不需要滑条。
         if (viewMode == ScheduleViewMode.WEEK && displayGroups.isNotEmpty()) {
             // 内容区底边就是底栏上沿，所以右下角只需让 10dp 就真的贴住右下角了；
-            // 那个 146dp 是给「整屏悬浮层」算的，用在内容区里等于把卡片抬到半空。
+            // 146dp 是给「整屏悬浮层」算的，用在内容区里等于把卡片抬到半空。
             // 提示条是整屏覆盖层且通栏，出现时才临时上让（条高约 44dp + 8dp 间距）。
             val zoomBottom by animateDpAsState(
                 targetValue = if (toastVisible) 56.dp else 10.dp,
@@ -925,6 +955,7 @@ internal fun SchedulePage(
                     .padding(end = 10.dp, bottom = zoomBottom),
             )
         }
+    }
     }
 }
 
@@ -1014,12 +1045,13 @@ private fun ScheduleWeekNavigator(
     selectedWeek: Int,
     totalWeeks: Int,
     currentWeek: Int?,
-    onWeekSelected: (Int) -> Unit,
+    onWeekSelected: (Int, Boolean) -> Unit,
 ) {
     var choosingWeek by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         OutlinedButton(
-            onClick = { onWeekSelected(selectedWeek - 1) }, enabled = selectedWeek > 1,
+            // 逐周翻动保留星期几（true）；下拉与「看本周」是定点跳转（false）。
+            onClick = { onWeekSelected(selectedWeek - 1, true) }, enabled = selectedWeek > 1,
             modifier = Modifier.defaultMinSize(minWidth = 36.dp, minHeight = 36.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
         ) { PrivacyText("‹", style = MaterialTheme.typography.titleLarge) }
@@ -1031,16 +1063,16 @@ private fun ScheduleWeekNavigator(
                 (1..totalWeeks).forEach { week ->
                     DropdownMenuItem(
                         text = { PrivacyText(if (week == currentWeek) "第${week}周 · 本周" else "第${week}周") },
-                        onClick = { choosingWeek = false; onWeekSelected(week) },
+                        onClick = { choosingWeek = false; onWeekSelected(week, false) },
                     )
                 }
             }
         }
         if (currentWeek != null && selectedWeek != currentWeek) {
-            TextButton(onClick = { onWeekSelected(currentWeek) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp)) { PrivacyText("看本周", style = MaterialTheme.typography.labelLarge) }
+            TextButton(onClick = { onWeekSelected(currentWeek, false) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp)) { PrivacyText("看本周", style = MaterialTheme.typography.labelLarge) }
         }
         OutlinedButton(
-            onClick = { onWeekSelected(selectedWeek + 1) }, enabled = selectedWeek < totalWeeks,
+            onClick = { onWeekSelected(selectedWeek + 1, true) }, enabled = selectedWeek < totalWeeks,
             modifier = Modifier.defaultMinSize(minWidth = 36.dp, minHeight = 36.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
         ) { PrivacyText("›", style = MaterialTheme.typography.titleLarge) }
@@ -1124,7 +1156,7 @@ private fun ScheduleNextCourseCard(
 }
 
 /** 明日课程：按真实日期预览明天的课，跨周时取下一周数据；点击可看课程详情。
- *重做：旧版单行 Row 里教室文本没有宽度约束，长教室名会挤压课程名
+ * 单行 Row 里教室文本没有宽度约束，长教室名会挤压课程名
  *甚至溢出；改为每节课一张两行小卡片，时间列固定宽度、正文按 weight 自适应并省略。 */
 @Composable
 private fun ScheduleTomorrowCard(
@@ -1137,6 +1169,8 @@ private fun ScheduleTomorrowCard(
         shape = AppCardShape,
         modifier = Modifier.fillMaxWidth(),
     ) {
+        // 考试并入明日课程后要能一眼分辨：与日程里的考试块同一套暗红标识。
+        val examInk = examAccent()
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             PrivacyText(
                 "明日课程 · 周${xmuWeekdayShort(xmuWeekdayFrom(tomorrow))} ${tomorrow.monthValue}/${tomorrow.dayOfMonth}",
@@ -1170,13 +1204,15 @@ private fun ScheduleTomorrowCard(
                             ) {
                                 PrivacyText(
                                     formatXmuTime(group.startTime),
-                                    color = themePrimary(),
+                                    // 考试行的起止时间跟考试名同一套暗红：只把课名标黄、时间仍是学院蓝，
+                                    // 一眼看不出整行是同一条考试。
+                                    color = if (group.isExam) examInk else themePrimary(),
                                     fontWeight = FontWeight.Bold,
                                     style = MaterialTheme.typography.labelMedium,
                                 )
                                 PrivacyText(
                                     formatXmuTime(group.endTime),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = if (group.isExam) examInk else MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.labelSmall,
                                 )
                             }
@@ -1184,11 +1220,15 @@ private fun ScheduleTomorrowCard(
                                 Modifier
                                     .width(3.dp)
                                     .height(36.dp)
-                                    .background(scheduleCourseColor(group.courseName), RoundedCornerShape(999.dp)),
+                                    .background(
+                                        if (group.isExam) examInk else scheduleCourseColor(group.courseName, LocalScheduleColorMap.current),
+                                        RoundedCornerShape(999.dp),
+                                    ),
                             )
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 PrivacyText(
-                                    normalizeScheduleBrackets(group.courseName),
+                                    (if (group.isExam) "考 · " else "") + normalizeScheduleBrackets(group.courseName),
+                                    color = if (group.isExam) examInk else Color.Unspecified,
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
@@ -1250,27 +1290,40 @@ internal fun ScheduleGridCourseBlock(
     overlapping: Boolean = false,
     textScale: Float = 1f,
 ) {
-    // 单元格文字：按需求恢复 的紧凑排版 —— 左对齐、逐行自然换行，
+    // 单元格文字用紧凑排版 —— 左对齐、逐行自然换行，
     // 只保留「课程名 / 节次 / 地点」三行，起止时间不再在格子里重复（已由左侧节次列承担）。
     fun scaled(style: TextStyle) = style.copy(
         fontSize = style.fontSize * textScale,
         lineHeight = style.fontSize * textScale * 1.15f,
     )
     val dark = LocalXmuDarkTheme.current
-    // 考试块统一改用暗红，不再用警示色；深色模式下提亮，保证底色与文字可读。
-    val examInk = if (dark) Color(0xFFE08282) else Color(0xFF8E1B1B)
+    // 考试块统一用暗红（examAccent），不再用警示色或课程散列色。
+    val examInk = examAccent()
     // 考试不按课程名散列配色，避免同一场考试在不同视图里换色。
-    val color = if (group.isExam) examInk else scheduleCourseColor(group.courseName)
-    // 深色模式：课程色底加深、文字改浅，避免半透明色叠深底后深字不可读
+    val color = if (group.isExam) examInk else scheduleCourseColor(group.courseName, LocalScheduleColorMap.current)
+    // 深色模式：课程色底加深、文字改浅，避免半透明色叠深底后深字不可读。
     val blockColor = color.copy(alpha = if (dark) 0.28f else 0.18f).compositeOver(MaterialTheme.colorScheme.surface)
     // inProgress 在深色下也换深底浅字：浅绿底 + 近白字对比不足（审查 M2）
-    val inProgressBlock = if (dark) Color(0xFF1E3A32) else Color(0xFFD9F5E7)
+    // 考试格不套课程的浅绿，用同一枚暗红的淡底 + 暗红描边。
+    val inProgressBlock = when {
+        group.isExam -> examInk.copy(alpha = if (dark) 0.22f else 0.14f)
+            .compositeOver(MaterialTheme.colorScheme.surface)
+        dark -> Color(0xFF1E3A32)
+        else -> Color(0xFFD9F5E7)
+    }
     val textColor = if (dark) Color(0xFFE3EBF3) else Color(0xFF16283A)
     val detailColor = if (dark) Color(0xFF9FB0C0) else Color(0xFF425B72)
     Surface(
         color = if (inProgress) inProgressBlock else blockColor,
         shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(if (inProgress) 2.dp else 1.dp, if (inProgress) AppSuccess else color.copy(alpha = 0.55f)),
+        border = BorderStroke(
+            if (inProgress) 2.dp else 1.dp,
+            when {
+                inProgress && group.isExam -> examInk
+                inProgress -> AppSuccess
+                else -> color.copy(alpha = 0.55f)
+            },
+        ),
         modifier = modifier
             .fillMaxSize()
             .alpha(if (dimmed) 0.48f else 1f)
@@ -1309,7 +1362,7 @@ internal fun ScheduleGridCourseBlock(
             }
             PrivacyText(
                 // 格子里走 forGrid 分支 —— 只删「楼」字；无教室仍显示「无 / 教室信息」
-                // 两行（恢复，只有桌面小组件才精简成「无」）。
+                // 两行（只有桌面小组件才精简成「无」）。
                 glueParentheses(scheduleLocationSummary(group, forGrid = true)),
                 style = scaled(MaterialTheme.typography.bodySmall),
                 fontWeight = FontWeight.Medium,
@@ -1370,7 +1423,7 @@ private fun ScheduleAgendaView(
     // 已上过的课不再平铺成一列，改成互相重叠的一摞。
     // 收起态里后面的卡只画「时间 / 课名 / 节次」顶部条带，不画地点与周次，
     // 露出的部分不会出现半截地点；整摞半透明但用离屏合成，遮挡关系仍然正确。
-    // 点击整摞展开成 那样的正常平铺；展开状态只用 remember（不落 rememberSaveable），
+    // 点击整摞展开成正常平铺；展开状态只用 remember（不落 rememberSaveable），
     // 离开日程页 / 切到周课表再回来时组合被销毁，回来自动重新收起。
     val (stackGroups, restGroups) = if (selectedIsCurrent && selectedDay == todayWeekday) {
         dayGroups.partition { it.endTime < nowValue }
@@ -1397,7 +1450,7 @@ private fun ScheduleAgendaView(
     }
 }
 
-/** 日程里的一张课程卡：未上的课与已上的课共用这一套版式（v71）。 */
+/** 日程里的一张课程卡：未上的课与已上的课共用这一套版式。 */
 @Composable
 private fun AgendaCourseCard(
     group: XmuScheduleGroup,
@@ -1409,14 +1462,14 @@ private fun AgendaCourseCard(
     clickable: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    // 日程里的考试卡不再用学院蓝。蓝色全部换成同色阶的红：
-    // 深红用于起始时间与考试名，亮一档的红用于节次与「考试」标记，侧面条带保持暗红。
-    // 与周课表格子的 examInk 同源，深浅模式各有一套，避免深底上深红不可读。
-    val examInk = if (LocalXmuDarkTheme.current) Color(0xFFE08282) else Color(0xFF8E1B1B)
-    // 进行中的考试卡不再套用课程的浅绿 —— 改浅红底 + 红描边。
-    // 深红文字在浅红底上仍有足够对比；课程卡保持原来的浅绿 / 绿边不变。
-    val inProgressContainer = if (group.isExam) themeSoftRed() else themeSoftGreen()
-    val inProgressBorder = if (group.isExam) themeWarning() else AppSuccess
+    // 日程里的考试卡统一用暗红：起止时间、考试名、节次、「考试」标记、侧面条带同一个色，
+    // 不再各处分别取警示色或课程色。
+    val examInk = examAccent()
+    // 进行中的考试卡用淡红底 + 暗红描边，与文字同色系；课程卡保持原来的浅绿 / 绿边。
+    val examSoft = examInk.copy(alpha = if (LocalXmuDarkTheme.current) 0.18f else 0.12f)
+        .compositeOver(MaterialTheme.colorScheme.surface)
+    val inProgressContainer = if (group.isExam) examSoft else themeSoftGreen()
+    val inProgressBorder = if (group.isExam) examInk else AppSuccess
     Surface(
         color = if (inProgress) inProgressContainer else MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(12.dp),
@@ -1447,7 +1500,7 @@ private fun AgendaCourseCard(
                     .width(4.dp)
                     .height(64.dp)
                     .background(
-                        if (group.isExam) themeWarning() else scheduleCourseColor(group.courseName),
+                        if (group.isExam) examInk else scheduleCourseColor(group.courseName, LocalScheduleColorMap.current),
                         RoundedCornerShape(999.dp),
                     ),
             )
@@ -1468,7 +1521,7 @@ private fun AgendaCourseCard(
                         PrivacyText(
                             "考试",
                             style = MaterialTheme.typography.labelSmall,
-                            color = themeWarning(),
+                            color = examInk,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(end = 6.dp),
                         )
@@ -1476,7 +1529,7 @@ private fun AgendaCourseCard(
                     PrivacyText(
                         "${group.startSection}-${group.endSection}节",
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (group.isExam) themeWarning() else themePrimary(),
+                        color = if (group.isExam) examInk else themePrimary(),
                     )
                 }
                 if (showDetails) {
@@ -1496,15 +1549,15 @@ private fun AgendaCourseCard(
 }
 
 /**
- *已上过的课收成一摞，整块可点，点开后由外层改成 那样的正常平铺。
- * 步进 46dp，再收到 44dp；收起态条带只画一行「起始时间 / 课名 / 节次」。
+ *已上过的课收成一摞，整块可点，点开后由外层改成正常平铺。
+ * 步进 44dp；收起态条带只画一行「起始时间 / 课名 / 节次」。
  *
  * - 后面的卡 `showDetails = false`，只画「时间 / 课名 / 节次」顶部条带，不画结束时间、
  *地点与周次；露出的高度里根本不存在第二行文字，下半截由前一张卡完整遮住。
  *课名上方空白 12dp 保持不变、下方空白 8dp，文字位置不动。
  * - 半透明施加在「整摞合成后的一层」：卡在离屏缓冲里用不透明底色按先后绘制，后画的盖住
  *前画的，再把整层按 alpha 合成到页面。前卡半透明时透出的是页面背景，而不是它压住的
- *后卡内容；若把 alpha 逐张加在卡上，被压住的文字就会从前卡里透出来（踩过的坑）。
+ *后卡内容；若把 alpha 逐张加在卡上，被压住的文字就会从前卡里透出来。
  * - 展开状态由外层用普通 remember 保存，离开日程页即销毁，回来自动收起。
  */
 @Composable
@@ -1534,7 +1587,7 @@ private fun AgendaPastCourseDeck(
 }
 
 /**
- * 自写 Layout；改为固定步进：第 i 张的顶部 = i * step。
+ * 自写 Layout，固定步进：第 i 张的顶部 = i * step。
  * 后提交的卡片画在上层，底色不透明，因此完整遮住前一张被压住的部分。
  * 整摞的半透明由外层统一施加，不在这里逐张设 alpha。
  */
@@ -1587,7 +1640,7 @@ private fun ScheduleCourseDetails(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     PrivacyText(normalizeScheduleBrackets(group.courseName), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    PrivacyText("考试安排", style = MaterialTheme.typography.labelMedium, color = themeWarning())
+                    PrivacyText("考试安排", style = MaterialTheme.typography.labelMedium, color = examAccent())
                 }
             }
             PrivacyText("${weekdayName(group.weekday)} · ${formatXmuTime(group.startTime)}—${formatXmuTime(group.endTime)}")
@@ -1715,28 +1768,47 @@ private fun ScheduleCourseDetails(
     }
 }
 
+/**
+ * 课程配色板，6 档：低饱和的灰蓝、灰绿、暗黄、灰紫、暗黄绿、淡粉紫。
+ *
+ * 色号由 [allocateScheduleColors] 按整学期课表的邻接关系分配，同一门课在所有视图
+ * （课表、日程、小组件）里颜色一致。红色系与橙色不在其中 —— 考试色由 examAccent() 独用。
+ * 颜色刻意压得偏灰，避免大面积高饱和色块压过文字。
+ *
+ * 第 6 档原为灰青 `#7F9FA7`，与灰绿 `#91AE9F` 在淡底上几乎分不出（实测 ΔE 1.7），
+ * 第 6 档为淡粉带一点紫的 `#C0A6B8`，色相 318°，与灰绿实色条一眼可分。
+ */
 internal val SCHEDULE_COLOR_PALETTE = listOf(
-    Color(0xFF8EA9BE),
-    Color(0xFF91AE9F),
-    Color(0xFFC09A7A),
-    Color(0xFF9B94B6),
-    Color(0xFFB28E98),
-    Color(0xFF7F9FA7),
+    Color(0xFF8EA9BE), // 1 灰蓝
+    Color(0xFF91AE9F), // 2 灰绿
+    Color(0xFFC4A94C), // 3 暗黄
+    Color(0xFF9B94B6), // 4 灰紫
+    Color(0xFFA6A87C), // 5 暗黄绿
+    Color(0xFFC0A6B8), // 6 淡粉紫
 )
 
-/** 课程色在调色板里的下标。桌面小组件要用它挑对应的 drawable，故单独暴露一个入口。 */
+/**
+ * 兜底色号：课名不在配色表里时（旧快照、临时拼出的考试/占位行）用哈希取模。
+ *
+ * 正常路径都走 [allocateScheduleColors] 的表；这里只保证任何调用点都能拿到一个稳定的色号。
+ */
 internal fun scheduleCourseColorIndex(courseName: String): Int =
     (courseName.hashCode().toLong() and 0x7FFFFFFF).toInt() % SCHEDULE_COLOR_PALETTE.size
 
-internal fun scheduleCourseColor(courseName: String): Color =
-    SCHEDULE_COLOR_PALETTE[scheduleCourseColorIndex(courseName)]
+/** 课名 → 色号表。App 内由 [SchedulePage] 按整学期课表算一次，向下用 CompositionLocal 分发。 */
+internal val LocalScheduleColorMap = compositionLocalOf<Map<String, Int>> { emptyMap() }
+
+internal fun scheduleCourseColor(courseName: String, colors: Map<String, Int> = emptyMap()): Color {
+    val index = colors[courseName] ?: scheduleCourseColorIndex(courseName)
+    return SCHEDULE_COLOR_PALETTE[index % SCHEDULE_COLOR_PALETTE.size]
+}
 
 /** 全角括号转半角：所有课表展示位统一（显示层规范，不改缓存数据）。 */
 internal fun normalizeScheduleBrackets(value: String): String =
     value.replace('（', '(').replace('）', ')')
 
 /** 周课表格子专用：括号规范化 + 删「楼」字（窄列省空间）。
- *日程、明日课程、下一节课、详情、桌面小组件都不再删「楼」。 */
+ * 日程、明日课程、下一节课、详情、桌面小组件都不删「楼」。 */
 internal fun sanitizeScheduleDisplay(value: String): String =
     normalizeScheduleBrackets(value).replace("楼", "")
 
@@ -1762,7 +1834,7 @@ internal const val SCHEDULE_NO_ROOM_TEXT = "无教室信息"
 
 /**
  * 周课表缩放：内部保存的是真实缩放值，界面显示值 = 缩放值 / [GRID_SCALE_BASE] * 100，
- * 即默认值 0.75 显示为 100%（把默认点重标为 100%）。
+ * 即默认值 0.75 显示为 100%。
  *显示上限由 200% 收到 150%，对应真实缩放上限 [MAX_GRID_SCALE]（0.25~1.125）。
  */
 internal const val GRID_SCALE_BASE = 0.75f
@@ -1799,7 +1871,7 @@ internal fun weekdayName(weekday: Int): String = when (weekday) {
  * 边框用 outlineVariant 低透明度，避免四块框线太重把弹窗压得很闷。
  */
 /**
- *调课弹窗专用紫色配色 —— 「全部背景色用紫色」。
+ *调课弹窗专用紫色配色：背景统一用紫色。
  * 弹窗底色最深、每块浅一档，块内选中的键再用一档更亮的紫，层次靠明度区分而不靠灰边。
  */
 @Composable
@@ -1823,7 +1895,7 @@ private fun swapPurpleLine(): Color =
     if (LocalXmuDarkTheme.current) Color(0xFF4C3E68) else Color(0xFFDDCEF1)
 
 /**
- *目标周次 / 目标星期 / 目标节次的框色与字色 —— #E9F2FB 框、#1C3F6A 字。
+ *目标周次 / 目标星期 / 目标节次的框色与字色：#E9F2FB 框、#1C3F6A 字。
  * 深色主题下等亮度的深蓝底 + 浅蓝字，否则浅蓝块在暗底上会刺眼。
  */
 @Composable

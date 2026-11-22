@@ -39,6 +39,8 @@ internal fun projectScheduleWidgetDays(
     val totalWeeks = calendar?.totalWeeks ?: 19
     val index = indexXmuScheduleByWeek(entries)
     val cache = resolveWeek?.let { WeekResolverCache(it) }
+    // 色号按整学期课表算一次，两个星期的快照共用同一份 —— 与 App 内课表同一张表。
+    val colorMap = scheduleColorMapForEntries(entries, SCHEDULE_COLOR_PALETTE.size)
     val currentMonday = today.minusDays(today.dayOfWeek.value - 1L)
     return (0L until 14L).map { offset ->
         val date = today.plusDays(offset)
@@ -53,7 +55,8 @@ internal fun projectScheduleWidgetDays(
             ScheduleWidgetCourse(group.courseName, group.startTime, group.endTime,
                 group.startSection, group.endSection, scheduleLocationSummary(group), group.isAdjusted,
                 weekday = weekday, week = week ?: 0, weeks = group.weeks,
-                teachers = group.teachers.joinToString("、"))
+                teachers = group.teachers.joinToString("、"),
+                colorIndex = colorMap[group.courseName] ?: -1)
         }
         ScheduleWidgetSnapshot(weekday, week ?: 0, termCode, courses, date.toEpochDay())
     }
@@ -79,7 +82,8 @@ internal fun projectScheduleWeekWidget(
     val totalWeeks = calendar?.totalWeeks ?: 19
     val currentWeek = if (manualWeek in 1..totalWeeks) manualWeek else xmuAcademicWeekFor(calendar, today).week
     val cache = resolveWeek?.let { WeekResolverCache(it) }
-    return projectWeekAt(entries, termCode, calendar, manualWeek, totalWeeks, currentWeek ?: 0, today, cache)
+    val colorMap = scheduleColorMapForEntries(entries, SCHEDULE_COLOR_PALETTE.size)
+    return projectWeekAt(entries, termCode, calendar, manualWeek, totalWeeks, currentWeek ?: 0, today, cache, colorMap)
 }
 
 /**把整学期每一周都投影成快照，供桌面周课表左右翻周。 */
@@ -94,8 +98,10 @@ internal fun projectScheduleWeekWidgetBundle(
     val totalWeeks = calendar?.totalWeeks ?: 19
     // 整学期一次投影会对同一周反复取数据，解析结果按周缓存，避免重复读盘解析。
     val cache = resolveWeek?.let { WeekResolverCache(it) }
+    // 色号表也只需算一次：十九周共用同一份，同课跨周不换色。
+    val colorMap = scheduleColorMapForEntries(entries, SCHEDULE_COLOR_PALETTE.size)
     return (1..totalWeeks).map { week ->
-        projectWeekAt(entries, termCode, calendar, manualWeek, totalWeeks, week, today, cache)
+        projectWeekAt(entries, termCode, calendar, manualWeek, totalWeeks, week, today, cache, colorMap)
     }
 }
 
@@ -108,6 +114,7 @@ private fun projectWeekAt(
     week: Int,
     today: LocalDate,
     cache: WeekResolverCache? = null,
+    colorMap: Map<String, Int> = emptyMap(),
 ): ScheduleWeekWidgetSnapshot {
     val index = indexXmuScheduleByWeek(entries)
     // 快照的 monday 用「学期第一周周一 + (week-1) 周」，跨周判断据此进行。
@@ -134,6 +141,7 @@ private fun projectWeekAt(
                     week = week,
                     weeks = group.weeks,
                     teachers = group.teachers.joinToString("、"),
+                    colorIndex = colorMap[group.courseName] ?: -1,
                 )
             }
     }

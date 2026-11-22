@@ -150,6 +150,10 @@ internal class ExamSectionState(
     private fun persistCustomExams() {
         scope.launch(cacheDispatcher) {
             persistMutex.withLock { CustomExamStore.save(activity, customExams) }
+            // 自定义考试也并入明日课程与桌面组件：落盘完成后再重投，否则组件读到旧文件。
+            withContext(Dispatchers.Main) {
+                runCatching { ScheduleWidgetProvider.refreshAll(activity) }
+            }
         }
     }
 
@@ -211,6 +215,9 @@ internal class ExamSectionState(
     /** 按当前设置重排考试提醒闹钟（幂等：先取消旧计划再排新计划）。
      *聚合所有已缓存学期的考试（跨学期提醒不丢）；执行挪到后台线程，不阻塞主线程。 */
     fun rescheduleReminders() {
+        // 考试安排变了，桌面小组件也要重算：考试会并入今日课程与明日预告，
+        // 只等组件 30 分钟自轮询会让用户以为「考试没同步」。
+        runCatching { ScheduleWidgetProvider.refreshAll(activity) }
         if (!requestGate.tryStart("exam-reminder")) return
         val reminderSettings = reminderSettings()
         val context = activity

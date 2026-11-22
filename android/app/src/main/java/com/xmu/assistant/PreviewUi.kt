@@ -37,7 +37,7 @@ internal val AppInnerShape = RoundedCornerShape(14.dp)
 /**降到 1dp。 */
 internal val AppCardElevation: Dp = 1.dp
 
-/** Shared implementation of the approved v8 preview language. */
+/** Shared implementation of the approved preview language. */
 @Composable
 internal fun PreviewCard(
     modifier: Modifier = Modifier,

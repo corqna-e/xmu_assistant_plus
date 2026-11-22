@@ -2,9 +2,9 @@
 
 Android 原生客户端，使用 Kotlin 和 Jetpack Compose，提供课程、课表、成绩、考试、签到与课件功能。登录态和业务缓存保存在设备本地。
 
-当前版本 **1.1 / versionCode 146**，支持 **Android 8.0（API 26）及以上**，compileSdk / targetSdk 为 35。
+当前版本 **1.2 / versionCode 159**，支持 **Android 8.0（API 26）及以上**，compileSdk / targetSdk 为 35。
 
-[下载 APK](../release/虾大助手Plus-1.1.apk) · [项目首页](../README.md) · [开发文档](../documentation/README.md) · [模块定位](../documentation/architecture.md)
+[下载 APK](../release/虾大助手Plus-1.2.apk) · [项目首页](../README.md) · [开发文档](../documentation/README.md) · [模块定位](../documentation/architecture.md)
 
 ## 使用入口
 

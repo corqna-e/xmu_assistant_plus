@@ -27,6 +27,15 @@ data class ScheduleWidgetCourse(
     val week: Int = 0,
     val weeks: String = "",
     val teachers: String = "",
+    /**该行是考试（考试安排并入日程后的行），渲染时标「[考]」而不是课名前缀。 */
+    val isExam: Boolean = false,
+    /**
+     * 课程色号（`SCHEDULE_COLOR_PALETTE` 下标），由投影时按整学期课表的邻接关系分配。
+     *
+     * -1 表示旧快照没有该字段，渲染端回退到课名散列。写进快照是为了让桌面组件
+     * 不用自己再算一遍：同一门课在 App、今日组件、周课表组件里必须是同一个色号。
+     */
+    val colorIndex: Int = -1,
 )
 
 data class ScheduleWidgetSnapshot(
@@ -75,6 +84,8 @@ object ScheduleWidgetData {
                         .put("week", course.week)
                         .put("weeks", course.weeks)
                         .put("teachers", course.teachers)
+                        .put("isExam", course.isExam)
+                        .put("colorIndex", course.colorIndex)
                 }),
             )
 
@@ -123,6 +134,9 @@ object ScheduleWidgetData {
                 week = row.optInt("week", 0),
                 weeks = row.optString("weeks", ""),
                 teachers = row.optString("teachers", ""),
+                isExam = row.optBoolean("isExam", false),
+                // 旧快照无该字段：-1 → 渲染端回退课名散列。
+                colorIndex = row.optInt("colorIndex", -1),
             )
         }
         return ScheduleWidgetSnapshot(

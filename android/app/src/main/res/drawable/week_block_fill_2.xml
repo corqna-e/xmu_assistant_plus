@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--周课表小组件：课程块底色。alpha 0x1E 与 App 内位图版一致的淡色，在浅色/深色卡片上都能自适应。 -->
+<!--周课表小组件：课程块底色 3 号色（暗黄）。alpha 1E，低饱和色板叠卡片后仍是淡底。 -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
     android:insetLeft="1.5dp" android:insetRight="1.5dp"
     android:insetTop="1dp" android:insetBottom="1dp">
     <shape android:shape="rectangle">
-    <solid android:color="#1EC09A7A" />
+    <solid android:color="#1EC4A94C" />
     <corners android:radius="4dp" />
     </shape>
 </inset>

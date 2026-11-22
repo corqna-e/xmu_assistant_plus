@@ -451,7 +451,7 @@ internal fun homeAutoAnswerSummary(settings: RollcallSettings): String =
     "${autoAnswerTypeSummary(settings)} · ${waitBeforeAnswerSummary(settings)}"
 
 /**
- * 账号卡右侧的紧凑胶囊按钮（v42）：两键同一套配色、竖排右对齐。
+ * 账号卡右侧的紧凑胶囊按钮：两键同一套配色、竖排右对齐。
  *
  * 用 Surface(onClick) 做胶囊，但 clickable 会套上 48dp 最小触摸尺寸
  * （minimumInteractiveComponentSize），两枚竖排合计约 98dp，把整张账号卡锁死在

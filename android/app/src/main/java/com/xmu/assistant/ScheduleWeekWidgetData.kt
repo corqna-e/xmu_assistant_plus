@@ -126,6 +126,7 @@ internal object ScheduleWeekWidgetData {
                         .put("week", course.week)
                         .put("weeks", course.weeks)
                         .put("teachers", course.teachers)
+                        .put("colorIndex", course.colorIndex)
                 })
             }),
         )
@@ -150,6 +151,8 @@ internal object ScheduleWeekWidgetData {
                     week = row.optInt("week", root.optInt("week", 0)),
                     weeks = row.optString("weeks", ""),
                     teachers = row.optString("teachers", ""),
+                    // 旧快照无该字段：-1 → 渲染端回退课名散列。
+                    colorIndex = row.optInt("colorIndex", -1),
                 )
             }
             days += courses

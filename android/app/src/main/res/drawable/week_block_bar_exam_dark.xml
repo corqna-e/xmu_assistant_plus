@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--周课表小组件：考试块左侧色条（深色）。与 App 内深色 examInk 同色。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#E08282" />
+    <corners android:radius="2dp" />
+</shape>

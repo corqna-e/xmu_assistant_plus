@@ -82,6 +82,11 @@ internal data class WidgetPalette(
     val cardBackground: Int,
     val todayChip: Int,
     val blockFills: IntArray,
+    /**考试块底色与色条：考试不按课名散列配色，用固定的暗红，与 App 内日程的考试块同一套。 */
+    val examBlockFill: Int,
+    val examBlockBar: Int,
+    /**考试文字与竖条的颜色（暗红），与 App 内考试块一致。 */
+    val examInk: Int,
     /**组件内课程详情覆盖层里那张卡片的底（圆角实色，与桌面卡片区分开）。 */
     val detailCard: Int,
 )
@@ -103,6 +108,9 @@ internal fun widgetPalette(context: Context, dark: Boolean = widgetDark(context)
                 R.drawable.week_block_fill_dark_4, R.drawable.week_block_fill_dark_5,
             ),
             detailCard = R.drawable.widget_detail_card_bg_dark,
+            examBlockFill = R.drawable.week_block_fill_exam_dark,
+            examBlockBar = R.drawable.week_block_bar_exam_dark,
+            examInk = context.getColor(R.color.widget_dark_exam_ink),
         )
     } else {
         WidgetPalette(
@@ -120,5 +128,8 @@ internal fun widgetPalette(context: Context, dark: Boolean = widgetDark(context)
                 R.drawable.week_block_fill_4, R.drawable.week_block_fill_5,
             ),
             detailCard = R.drawable.widget_detail_card_bg,
+            examBlockFill = R.drawable.week_block_fill_exam,
+            examBlockBar = R.drawable.week_block_bar_exam,
+            examInk = context.getColor(R.color.widget_light_exam_ink),
         )
     }

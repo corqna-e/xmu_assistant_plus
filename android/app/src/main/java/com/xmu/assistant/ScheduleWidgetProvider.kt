@@ -31,9 +31,13 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
 
         private fun updateWidgets(context: Context, manager: AppWidgetManager, ids: IntArray) {
             val today = java.time.LocalDate.now()
-            val snapshot = ScheduleWidgetData.load(context, today)
+            // 考试（教务 + 自定义）也并入日程：投影只认课表，渲染前补一次，
+            // 今日列与明日预告都要带上。
+            val (exams, customExams) = loadExamsForWidget(context)
+            val snapshot = ScheduleWidgetData.load(context, today)?.withExams(exams, customExams)
             // 今日课程结束后要改显示明日课程，这里把明天的摘要一并取出。
             val tomorrow = ScheduleWidgetData.loadDay(context, today.plusDays(1).toEpochDay())
+                ?.withExams(exams, customExams)
             // 总开关已删除，桌面小卡片恒可用（历史镜像里残留的 false 不再生效）。
             val enabled = true
             // Load the summary once, then reuse RemoteViews for widgets with the same dimensions.

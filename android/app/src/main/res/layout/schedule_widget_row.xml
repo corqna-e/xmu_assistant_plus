@@ -14,7 +14,8 @@
     <LinearLayout
         android:layout_width="54dp"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
 
         <TextView android:includeFontPadding="false"
             android:id="@+id/row_time"
@@ -34,11 +35,18 @@
             android:textSize="12sp" />
     </LinearLayout>
 
+    <!--课程色竖条：与 App 内明日课程卡、周课表组件同一套配色，考试固定暗红。
+         必须用 TextView：RemoteViews 不接受 android.view.View。 -->
+    <TextView android:id="@+id/row_bar"
+        android:layout_width="3dp"
+        android:layout_height="32dp"
+        android:layout_marginStart="8dp" />
+
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:layout_marginStart="10dp"
+        android:layout_marginStart="8dp"
         android:orientation="vertical">
 
         <TextView android:includeFontPadding="false"
