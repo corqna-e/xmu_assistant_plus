@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App shortcut icon: 下载课程课件。蓝色圆牌同一套底，图形取自 App 内「课程课件」导航图标
+     （ic_nav_folder），长按菜单里的图形与进入后的入口图标一致。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <path
+        android:fillColor="#FF023E7D"
+        android:pathData="M512,0 A512,512,0,1,1,512,1024 A512,512,0,1,1,512,0 Z" />
+    <group
+        android:pivotX="0"
+        android:pivotY="0"
+        android:scaleX="26.5"
+        android:scaleY="26.5"
+        android:translateX="194"
+        android:translateY="194">
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M3,7 Q3,5 5,5 L10,5 L12,8 L19,8 Q21,8 21,10 L21,19 L3,19 Z M3,11 L21,11"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="1.7" />
+    </group>
+</vector>

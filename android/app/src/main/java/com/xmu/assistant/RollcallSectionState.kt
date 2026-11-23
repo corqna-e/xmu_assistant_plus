@@ -125,6 +125,115 @@ internal class RollcallSectionState(
         historyLoading = false
     }
 
+    /** 手动补签进行中（按钮置灰用）。 */
+    var forceAnswering by mutableStateOf(false)
+        private set
+
+    /**
+     * 「立即进行当前签到」：不看自动签到策略、不看监控是否运行、不看开关，
+     * 直接拉列表并提交所有仍需要本人处理的签到。
+     * 点击时没有进行中的签到 → 回调 [onNoActive]，由 UI 侧打开监控与自动签到。
+     */
+    fun forceAnswerNow(onNoActive: () -> Unit) {
+        if (forceAnswering) return
+        if (!requireLogin()) return
+        if (!requestGate.tryStart("rollcall_force")) {
+            show("上一次立即签到还在进行，请稍候")
+            return
+        }
+        forceAnswering = true
+        val session = sessionEpoch.snapshot(sessionOwner, cookieHeader())
+        val accountId = username()
+        scope.runModuleRequest(
+            requestGate = requestGate,
+            gateKey = "rollcall_force",
+            acceptsResult = { sessionEpoch.accepts(session, cookieHeader(), loggedIn()) },
+            ioWork = { forceAnswerAll(session.cookieHeader, accountId) },
+            onResult = { result ->
+                result.onSuccess { report ->
+                    val unfinished = report.unfinished.entries.map { "${it.key}：${it.value}" }
+                    when {
+                        !report.hadActive -> show("当前没有进行中的签到")
+                        unfinished.isEmpty() ->
+                            show(if (report.answered > 0) "已完成 ${report.answered} 项签到" else "当前签到已完成")
+                        report.answered > 0 -> showWarning(
+                            "已提交 ${report.answered} 项，${unfinished.size} 项未完成：${unfinished.first()}",
+                        )
+                        else -> showWarning("签到未完成：${unfinished.first()}")
+                    }
+                    if (!report.hadActive) onNoActive()
+                    refresh(showFeedback = false)
+                }
+                result.onFailure { error ->
+                    if (sessionExpiryAction(error, false) == SessionExpiryAction.RECOVER_ONCE) {
+                        refreshError = "登录已过期，正在安全续登"
+                        setPendingSessionRetry(ModuleReadRetry(ModuleReadRequest.ROLLCALL))
+                    } else {
+                        showError("立即签到失败：${refreshFailureMessage(error)}")
+                    }
+                }
+            },
+            releaseLoading = { forceAnswering = false },
+        )
+    }
+
+    /**
+     * 「拉列表 → 提交 → 再拉列表」最多 [FORCE_ANSWER_MAX_ROUNDS] 轮：
+     * 平台回执有延迟，重拉仍会显示进行中，所以按「已提交过的 id 不再提交」收敛。
+     * 二维码等无法自动提交的类型如实记进 unfinished，不猜测。
+     */
+    private fun forceAnswerAll(cookieHeader: String, accountId: String): ForceAnswerReport {
+        val engine = createEngine(cookieHeader)
+        var hadActive = false
+        var answered = 0
+        val handled = mutableSetOf<String>()
+        val unfinished = linkedMapOf<String, String>()
+        var round = 0
+        while (round < FORCE_ANSWER_MAX_ROUNDS) {
+            round += 1
+            val events = engine.pollWithDetails(accountId)
+            if (round == 1) hadActive = events.isNotEmpty()
+            val pending = events.filter { it.id !in handled && it.awaitingMyAnswer() }
+            if (pending.isEmpty()) break
+            var progressed = false
+            for (event in pending) {
+                val label = event.courseTitle.ifBlank { event.type }
+                if (event.type != "数字签到" && event.type != "雷达签到") {
+                    unfinished[label] = "该类型需手动完成"
+                    continue
+                }
+                var submitted = false
+                var reason = ""
+                var attempt = 0
+                while (!submitted && attempt < FORCE_ANSWER_ATTEMPTS) {
+                    if (attempt > 0) Thread.sleep(FORCE_ANSWER_RETRY_GAP_MILLIS)
+                    attempt += 1
+                    val outcome = runCatching { engine.answer(event) }
+                    submitted = outcome.getOrDefault(false)
+                    if (!submitted) {
+                        val error = outcome.exceptionOrNull()
+                        reason = when {
+                            error is RollcallAnswerNotSubmittedException -> error.message.orEmpty()
+                            error != null -> friendlyMessage(error)
+                            else -> engine.lastRadarFailure.orEmpty()
+                        }
+                        if (error is RollcallAnswerNotSubmittedException) break
+                    }
+                }
+                if (submitted) {
+                    answered += 1
+                    handled += event.id
+                    unfinished.remove(label)
+                    progressed = true
+                } else {
+                    unfinished[label] = reason.ifBlank { "平台未确认提交结果" }
+                }
+            }
+            if (!progressed) break
+        }
+        return ForceAnswerReport(hadActive, answered, unfinished)
+    }
+
     /**
      * 刷新最近十次签到（SWR：先渲缓存再后台刷新原位更新，失败保留缓存只报错）。
      * 独立互斥门 "rollcall_history"，与进行中签到的 "rollcall" 互不阻塞，
@@ -236,4 +345,29 @@ internal class RollcallSectionState(
         historyUpdatedAtMillis = 0L
         historyLoaded = false
     }
+}
+
+/** 「立即进行当前签到」一次点击的结果。 */
+internal data class ForceAnswerReport(
+    /** 点击时是否存在进行中的签到（false → UI 侧去开启监控与自动签到）。 */
+    val hadActive: Boolean,
+    val answered: Int,
+    /** 课名 → 未完成原因；空表示全部完成。 */
+    val unfinished: Map<String, String>,
+)
+
+/** 最多循环几轮「拉列表 → 提交」：正常一轮就结束，留给平台回执延迟一点余量。 */
+private const val FORCE_ANSWER_MAX_ROUNDS = 3
+
+/** 单条签到在一轮里的提交次数（平台瞬时 5xx/超时会重试）。 */
+private const val FORCE_ANSWER_ATTEMPTS = 2
+
+private const val FORCE_ANSWER_RETRY_GAP_MILLIS = 1_000L
+
+/** 这条签到现在还需要我提交吗：已截止、已签、迟到、请假都不算。 */
+private fun RollcallEvent.awaitingMyAnswer(): Boolean {
+    if (isExpired) return false
+    if (remainingSeconds != null && remainingSeconds <= 0L) return false
+    val own = ownStatus ?: return true
+    return !isTerminalRollcallStatus(own)
 }

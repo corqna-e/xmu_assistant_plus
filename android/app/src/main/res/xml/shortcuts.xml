@@ -1,25 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 静态应用快捷方式：长按桌面图标直达核心页面。
+<!-- 应用快捷方式（长按桌面图标）。
+
+     这里只放三条固定入口：下载课程课件 / 查看课表 / 查看签到情况。
+     第 1 条「自动签到」是动态快捷方式（见 AppShortcuts.kt 的 ShortcutManager 下发）：
+     它的文案要随开关状态在「开启自动签到 / 关闭自动签到」之间切换，静态 XML 做不到。
+     系统把动态快捷方式排在静态之前，因此长按菜单里它天然是第 1 项。
+
      Intent 显式指向 MainActivity 并带 open_page extra，复用 singleTask
      onNewIntent 的既有深链消费链路（deepLinkSeq），无需新增路由代码。 -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
-        android:shortcutId="rollcall_status"
+        android:shortcutId="courseware"
         android:enabled="true"
-        android:icon="@drawable/ic_shortcut"
-        android:shortcutShortLabel="@string/shortcut_rollcall_short"
-        android:shortcutLongLabel="@string/shortcut_rollcall_long">
+        android:icon="@drawable/ic_shortcut_courseware"
+        android:shortcutShortLabel="@string/shortcut_courseware_short"
+        android:shortcutLongLabel="@string/shortcut_courseware_long">
         <intent
             android:action="android.intent.action.VIEW"
             android:targetPackage="com.xmu.assistant.xia"
             android:targetClass="com.xmu.assistant.MainActivity">
-            <extra android:name="open_page" android:value="签到情况" />
+            <extra android:name="open_page" android:value="课程课件" />
         </intent>
     </shortcut>
     <shortcut
         android:shortcutId="schedule"
         android:enabled="true"
-        android:icon="@drawable/ic_shortcut"
+        android:icon="@drawable/ic_shortcut_schedule"
         android:shortcutShortLabel="@string/shortcut_schedule_short"
         android:shortcutLongLabel="@string/shortcut_schedule_long">
         <intent
@@ -30,16 +36,16 @@
         </intent>
     </shortcut>
     <shortcut
-        android:shortcutId="scores"
+        android:shortcutId="rollcall_status"
         android:enabled="true"
-        android:icon="@drawable/ic_shortcut"
-        android:shortcutShortLabel="@string/shortcut_score_short"
-        android:shortcutLongLabel="@string/shortcut_score_long">
+        android:icon="@drawable/ic_shortcut_rollcall"
+        android:shortcutShortLabel="@string/shortcut_rollcall_short"
+        android:shortcutLongLabel="@string/shortcut_rollcall_long">
         <intent
             android:action="android.intent.action.VIEW"
             android:targetPackage="com.xmu.assistant.xia"
             android:targetClass="com.xmu.assistant.MainActivity">
-            <extra android:name="open_page" android:value="成绩" />
+            <extra android:name="open_page" android:value="签到情况" />
         </intent>
     </shortcut>
 </shortcuts>

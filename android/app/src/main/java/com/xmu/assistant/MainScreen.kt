@@ -259,6 +259,8 @@ internal fun MainScreen(
     /**桌面小组件指定的课表视图与请求序号（WEEK / AGENDA）。 */
     scheduleViewRequest: String = "",
     scheduleViewRequestSeq: Int = 0,
+    /**长按图标「自动签到」快捷方式的开关请求序号（0 表示本次没有请求）。 */
+    autoToggleSeq: Int = 0,
 ) {
     // App 内切换外观、或系统深浅色切换导致 Activity 重建时，立刻重建两张桌面卡片，
     // 让组件配色与 App 内「外观」设置一致（RemoteViews 存的是静态颜色，不会自己跟着变）。
@@ -344,6 +346,49 @@ internal fun MainScreen(
         refreshMonitorHealth()
         if (toastOnStarted) show("签到监控已开启")
         return true
+    }
+    // 自动签到的唯一写入口：首页卡片开关与长按图标快捷方式共用，行为不会两处漂移。
+    // stopMonitorWhenDisabled 仅快捷方式用：它的语义是「开关自动签到的同时启闭监控」，
+    // 而首页开关按原设计只改策略、保留签到提醒。
+    fun applyAutoAnswer(enabled: Boolean, stopMonitorWhenDisabled: Boolean = false) {
+        val next = toggleAllAutoAnswer(rollcallSettings, enabled)
+        setRollcallSettings(next)
+        settings.saveRollcall(next)
+        // 长按菜单上的文案跟着翻转（「开启自动签到 / 关闭自动签到」）。
+        AppShortcuts.update(activity)
+        when {
+            enabled -> {
+                if (!monitorRunning) {
+                    val started = startMonitor(toastOnStarted = false)
+                    show(
+                        if (started) "已开启自动签到 · 已自动启动签到监控"
+                        else "已开启数字和雷达自动处理"
+                    )
+                } else {
+                    show("已开启数字和雷达自动处理")
+                }
+            }
+            stopMonitorWhenDisabled && monitorRunning -> {
+                show("已关闭自动签到，正在停止签到监控")
+                homeActions.onStopMonitor(monitor.monitorTransitionInProgress, monitor.monitorTransitionId)
+            }
+            else -> show("已关闭数字和雷达自动处理，仍会保留签到提醒")
+        }
+    }
+    // 长按图标「自动签到」快捷方式：进 App 后按当前状态取反执行。
+    // 用序号消费（不是布尔值）：连点同一条快捷方式每次都要生效。
+    // consumed 走 rememberSaveable：重建时 intent 里的 extra 仍在，序号会被重新解析成 1，
+    // 若 consumed 归零就会把开关再翻一次。
+    var consumedAutoToggleSeq by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(autoToggleSeq) {
+        if (autoToggleSeq == 0 || autoToggleSeq <= consumedAutoToggleSeq) return@LaunchedEffect
+        consumedAutoToggleSeq = autoToggleSeq
+        if (!loggedIn) {
+            show("请先登录，再开启自动签到")
+            return@LaunchedEffect
+        }
+        val autoOn = rollcallSettings.autoAnswerNumber || rollcallSettings.autoAnswerRadar
+        applyAutoAnswer(enabled = !autoOn, stopMonitorWhenDisabled = true)
     }
     val radarCoordinateStore = remember(activity) { RadarCoordinateStore(activity) }
     var coordinateTarget by remember(username, loggedIn) { mutableStateOf<CourseSummary?>(null) }
@@ -499,6 +544,19 @@ internal fun MainScreen(
                                 onManageCoordinates = { courseId, courseTitle ->
                                     coordinateTarget = CourseSummary(courseId, courseTitle)
                                     onModuleEntered(Page.COURSE_LOCATION)
+                                },
+                                forceAnswering = rollcall.forceAnswering,
+                                onForceAnswer = {
+                                    rollcall.forceAnswerNow(
+                                        onNoActive = {
+                                            val next = toggleAllAutoAnswer(rollcallSettings, true)
+                                            setRollcallSettings(next)
+                                            settings.saveRollcall(next)
+                                            AppShortcuts.update(activity)
+                                            if (!monitorRunning) startMonitor(toastOnStarted = false)
+                                            show("当前没有进行中的签到，已开启监控与自动签到")
+                                        },
+                                    )
                                 },
                                 onRefresh = {
                                     // 顶部按钮一键刷两块（独立互斥门，可并行）
@@ -771,26 +829,7 @@ internal fun MainScreen(
                                             onLogout = { homeActions.onLogout(accountTransitionInProgress) },
                                             onStartMonitor = { startMonitor() },
                                             onStopMonitor = { homeActions.onStopMonitor(monitor.monitorTransitionInProgress, monitor.monitorTransitionId) },
-                                            onAutoChanged = { enabled ->
-                                                val next = toggleAllAutoAnswer(rollcallSettings, enabled)
-                                                setRollcallSettings(next)
-                                                settings.saveRollcall(next)
-                                                if (enabled && !monitorRunning) {
-                                                    // 打开自动签到即自动启动监控；旧的手动启动提示及其代码已删除。
-                                                    val started = startMonitor(toastOnStarted = false)
-                                                    // 新 toast：明确告知监控是自动启动的。启动未就绪时不弹
-                                                    // 任何额外提醒，状态卡会如实反映。
-                                                    show(
-                                                        if (started) "已开启自动签到 · 已自动启动签到监控"
-                                                        else "已开启数字和雷达自动处理"
-                                                    )
-                                                } else {
-                                                    show(
-                                                        if (enabled) "已开启数字和雷达自动处理"
-                                                        else "已关闭数字和雷达自动处理，仍会保留签到提醒"
-                                                    )
-                                                }
-                                            },
+                                            onAutoChanged = { enabled -> applyAutoAnswer(enabled) },
                                             onNavigate = { onModuleEntered(Page.fromId(it) ?: Page.HOME) },
                                             savedAccounts = savedAccountsForHome,
                                             rememberAccounts = settings.rememberAccounts,

@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -49,6 +50,9 @@ class MainActivity : ComponentActivity() {
     // 旋转/进程重建后经 onSaveInstanceState 恢复（与组合侧 consumedDeepLinkSeq
     // 配对持久化，见 STATE_DEEP_LINK_SEQ 注释）。
     private var deepLinkSeq by mutableStateOf(1)
+    // 长按图标「自动签到」快捷方式的开关请求序号：与 deepLinkSeq 同理用递增序号，
+    // 连续点同一条快捷方式也要每次都重新消费。
+    private var autoToggleSeq by mutableStateOf(0)
 
     private companion object {
         // deepLinkSeq 的重建恢复键：只持久化组合侧 consumed 而让 seq 重置为 1，
@@ -64,6 +68,7 @@ class MainActivity : ComponentActivity() {
         openedEventId = intent.data?.lastPathSegment.orEmpty()
         openedPage = intent.getStringExtra("open_page").orEmpty()
         openedScheduleView = intent.getStringExtra("open_schedule_view").orEmpty()
+        if (intent.getBooleanExtra(AppShortcuts.EXTRA_TOGGLE_AUTO, false)) autoToggleSeq = 1
         deepLinkSeq = savedInstanceState?.getInt(STATE_DEEP_LINK_SEQ, 1) ?: 1
         // 注册「每日自动同步课表 + 桌面小卡片」后台任务（KEEP 策略幂等：同 key 只保留一个周期任务）。
         // 挪到 IO 线程：enqueue 内部是同步 Room 写入，主线程执行会拖慢冷启动首帧。
@@ -73,6 +78,7 @@ class MainActivity : ComponentActivity() {
         //    减少用户打开成绩/课表页时的完整 CAS 认证链。绝不自动续登（mayRelogin 恒 false）。
         lifecycleScope.launch(Dispatchers.IO) {
             val warmSettings = runCatching { AssistantSettings(this@MainActivity) }.getOrNull()
+            AppShortcuts.update(applicationContext)
             ScheduleWidgetSyncWorker.scheduleDaily(applicationContext)
             // 旧版本生成的桌面快照没有课程色号，组件会回退课名散列，与 App 内的配色对不上。
             // 冷启动时补一次重建（读缓存课表在 IO 线程投影，不联网）。
@@ -109,7 +115,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (settingsReady) {
-                XmuAssistantApp(this, openedEventId, openedPage, deepLinkSeq, openedScheduleView)
+                XmuAssistantApp(this, openedEventId, openedPage, deepLinkSeq, openedScheduleView, autoToggleSeq)
             } else {
                 Surface {}
             }
@@ -140,6 +146,7 @@ class MainActivity : ComponentActivity() {
         openedEventId = intent.data?.lastPathSegment.orEmpty()
         openedPage = intent.getStringExtra("open_page").orEmpty()
         openedScheduleView = intent.getStringExtra("open_schedule_view").orEmpty()
+        if (intent.getBooleanExtra(AppShortcuts.EXTRA_TOGGLE_AUTO, false)) autoToggleSeq += 1
         deepLinkSeq += 1
     }
 }
@@ -152,6 +159,8 @@ fun XmuAssistantApp(
     deepLinkSeq: Int = 1,
     /**桌面小组件指定的课表视图（WEEK / AGENDA），空串表示不干预。 */
     openedScheduleView: String = "",
+    /**长按图标「自动签到」快捷方式的开关请求序号（0 表示无请求）。 */
+    autoToggleSeq: Int = 0,
 ) {
     val settings = remember { AssistantSettings(activity) }
     val sessionEpoch = ProcessSessionEpoch.instance
@@ -692,7 +701,17 @@ fun XmuAssistantApp(
         }
         accountTransitionInProgress = true
         workScope.launchStartupSessionWork(onFinished = { recovery.finishAutoLogin(recoveryToken) }) {
-            runCatching { TronclassLogin().login(accountUsername, accountPassword) }
+            // 冷启动时网络常处于关联中，首跳必抛 IOException。先等网络就绪，网络类失败
+            // 再退避重试一次；仍失败才按真实原因提示，不把网络抖动说成登录过期。
+            awaitDefaultNetworkReady(activity, 3_000L)
+            var attempt = runCatching { TronclassLogin().login(accountUsername, accountPassword) }
+            if (attempt.exceptionOrNull()?.rootCause() is java.io.IOException &&
+                recovery.accepts(recoveryToken)
+            ) {
+                delay(1_500L)
+                attempt = runCatching { TronclassLogin().login(accountUsername, accountPassword) }
+            }
+            attempt
                 .onSuccess { result -> withContext(Dispatchers.Main) {
                     try {
                         if (recovery.accepts(recoveryToken) && sessionEpoch.isOwnerActive(sessionOwner) &&
@@ -742,7 +761,13 @@ fun XmuAssistantApp(
                                 clearLoggedOutUi()
                             }
                             pendingModuleRefresh.clear()
-                            showWarning("登录已过期，请手动登录")
+                            showWarning(
+                                if (error.rootCause() is java.io.IOException) {
+                                    "网络连接失败，未能自动续登，请稍后重试或手动登录"
+                                } else {
+                                    "登录已过期，请手动登录"
+                                },
+                            )
                             if (busy == BusyStates.SESSION_EXPIRED_RELOGIN) busy = BusyStates.IDLE
                         }
                     } finally {
@@ -1189,5 +1214,25 @@ fun XmuAssistantApp(
         },
         scheduleViewRequest = scheduleViewRequest,
         scheduleViewRequestSeq = scheduleViewRequestSeq,
+        autoToggleSeq = autoToggleSeq,
     )
+}
+
+/**
+ * 冷启动等待默认网络具备 INTERNET 能力：只读 ConnectivityManager 状态，不发任何请求。
+ * 自动续登前把「网络仍在关联」这段窗口等过去，避免首跳必然失败的 IOException
+ * 被当成「登录已过期」。超时照常返回，由调用方按真实结果处理。
+ */
+private suspend fun awaitDefaultNetworkReady(activity: ComponentActivity, timeoutMillis: Long) {
+    val manager = runCatching { activity.getSystemService(ConnectivityManager::class.java) }
+        .getOrNull() ?: return
+    val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+    while (SystemClock.elapsedRealtime() < deadline) {
+        val ready = runCatching {
+            manager.activeNetwork?.let(manager::getNetworkCapabilities)
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        }.getOrDefault(false)
+        if (ready) return
+        delay(250L)
+    }
 }

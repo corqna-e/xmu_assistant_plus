@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -40,11 +42,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+
+/**「立即进行当前签到」按钮底色：深蓝，与蓝色系导航图标同族。 */
+private val ImmediateSignInBlue = Color(0xFF23508C)
 
 @Composable
 internal fun RollcallStatusPage(
@@ -60,6 +66,8 @@ internal fun RollcallStatusPage(
     loggedIn: Boolean = false,
     coordinateStore: RadarCoordinateStore? = null,
     onManageCoordinates: (String, String) -> Unit = { _, _ -> },
+    forceAnswering: Boolean = false,
+    onForceAnswer: () -> Unit = {},
     onRefresh: () -> Unit,
 ) {
     val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
@@ -94,6 +102,27 @@ internal fun RollcallStatusPage(
                 notificationEventLabel(openedEventId, events, historyItems)?.let { label ->
                     PrivacyText(label, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                 }
+            }
+        }
+        // 手动补签：不看策略与监控状态，直接处理进行中的签到；
+        // 没有进行中的签到则由上层打开监控与自动签到。
+        item {
+            Button(
+                onClick = onForceAnswer,
+                enabled = !forceAnswering,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ImmediateSignInBlue,
+                    contentColor = Color.White,
+                    disabledContainerColor = ImmediateSignInBlue.copy(alpha = 0.55f),
+                    disabledContentColor = Color.White.copy(alpha = 0.8f),
+                ),
+            ) {
+                PrivacyText(
+                    if (forceAnswering) "正在签到…" else "立即进行当前签到",
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
         if (events.isNotEmpty()) {

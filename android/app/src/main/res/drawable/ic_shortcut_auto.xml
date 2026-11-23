@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App shortcut icon: 自动签到开关。图形取自 App 内「签到与自动处理」的提醒图标（ic_nav_bell），
+     与「查看签到情况」的勾选图形区分开，避免长按菜单里两个图标一样。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <path
+        android:fillColor="#FF023E7D"
+        android:pathData="M512,0 A512,512,0,1,1,512,1024 A512,512,0,1,1,512,0 Z" />
+    <group
+        android:pivotX="0"
+        android:pivotY="0"
+        android:scaleX="26.5"
+        android:scaleY="26.5"
+        android:translateX="194"
+        android:translateY="194">
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M9,20 Q12,23 15,20 M5,17 L19,17 L17,14 L17,9 Q17,4 12,4 Q7,4 7,9 L7,14 Z M12,2 L12,4"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="1.7" />
+    </group>
+</vector>
