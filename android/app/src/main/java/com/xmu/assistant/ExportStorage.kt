@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import androidx.annotation.RequiresApi
 import java.io.File
 import java.io.OutputStream
 
@@ -49,7 +50,7 @@ internal object ExportStorage {
      * 失败返回 null，调用方必须如实报错，不能谎称已保存。
      */
     fun saveBytes(context: Context, displayName: String, mimeType: String, bytes: ByteArray): String? {
-        if (canWritePublic()) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val uri = insertPending(context, displayName, mimeType) ?: return null
             return writeAndPublish(context, uri, displayName) { out -> out.write(bytes) }
         }
@@ -67,7 +68,7 @@ internal object ExportStorage {
      * Android 8/9 写应用专属目录后由调用方经 FileProvider 分享。
      */
     fun saveBitmap(context: Context, displayName: String, bitmap: Bitmap): Uri? {
-        if (!canWritePublic()) return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
         val uri = insertPending(context, displayName, "image/png") ?: return null
         val saved = writeAndPublish(context, uri, displayName) { out ->
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) { "位图编码失败" }
@@ -75,6 +76,7 @@ internal object ExportStorage {
         return if (saved != null) uri else null
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun insertPending(context: Context, displayName: String, mimeType: String): Uri? {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, displayName)

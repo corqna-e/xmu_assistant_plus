@@ -10,6 +10,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import androidx.annotation.RequiresApi
 import android.webkit.MimeTypeMap
 import java.io.File
 import java.util.Locale
@@ -295,7 +296,7 @@ internal object CoursewareStorage {
             val set = result.getOrPut(folder) { mutableSetOf() }
             if (set.add(name)) counts[bucket] += 1
         }
-        if (canWritePublicDownloads()) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             queryPublicFiles(context, EXPORT_RELATIVE_PATH).forEach { (folder, name) -> add(0, folder, name) }
         }
         // MediaStore 看不到、但文件确实存在时，直接列一遍目录补齐。
@@ -317,6 +318,7 @@ internal object CoursewareStorage {
      * LIKE 只能做前缀粗筛，必须在代码里再判一次「等于根目录或以 根目录/ 开头」，
      * 否则「下载/xmu助手plus备份」这类相邻目录的文件会被算进来。
      */
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun queryPublicFiles(context: Context, root: String): List<Pair<String, String>> {
         val base = root.trimEnd('/')
         val rows = mutableListOf<Pair<String, String>>()

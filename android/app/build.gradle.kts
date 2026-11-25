@@ -29,7 +29,7 @@ android {
         // 2026-11-20 升为 1.1，2026-11-25 升为 1.3）。轮次只体现在安装包文件名的 vNN 上；
         // versionCode 仅作内部构建号，用于 dumpsys / adb install 判断
         // 「装进去的是否为新包」，界面上不展示。
-        versionCode = 208
+        versionCode = 209
         versionName = "1.3"
         buildConfigField("boolean", "NETWORK_METRICS", "false")
         // v24：改用高德轻量版地图 SDK（纯 jar，零 so），不再需要 abiFilters。
