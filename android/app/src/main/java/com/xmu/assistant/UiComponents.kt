@@ -49,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 /** 通知配置是否缺少必填项（用于顶部标签角标提示）。 */
 fun notificationSettingsMissing(settings: NotificationSettings): Boolean {
@@ -668,23 +670,114 @@ fun ToastBar(message: String, severity: ToastSeverity) {
 }
 
 @Composable
-fun ScoreSummaryPanel(summary: XmuScoreSummary) {
+fun ScoreSummaryPanel(summary: XmuScoreSummary, overallRank: Int? = null) {
     ScoreSummaryPanelSurface {
         ScoreSummaryMetricRows(summary)
-        ScoreMetric("已修总学分", scoreMetricText(summary.completedCredits), Modifier.fillMaxWidth())
+        // 学分与排名同处一张通栏卡：左侧「已修总学分」，右侧 rank 靠右。
+        // 排名固定取「入学以来 · 不含校选」，与排名页当前选中的范围无关。
+        // 学分是学分求和，真值最多 2 位小数，不做 4 位补零。
+        ScoreCreditRankMetric(
+            credits = scoreMetricText(summary.completedCredits),
+            position = overallRank,
+        )
     }
 }
 
-/** 四项统计的公共两行布局：平均与加权各自成行，顶部概览与模拟面板共用。 */
+/** 排名星号点开后自动收回的时间：够看清一眼，又不会长时间离开遮蔽状态。 */
+private const val RANK_REVEAL_MILLIS = 5_000L
+
+/**
+ * 概览第五行：通栏卡的左「已修总学分」、右「rank」。
+ *
+ * rank 只在「隐私模式开启 + 规则弹窗里排名星号开关开启」时换成等长星号；
+ * 这种遮蔽下点一下数字可临时看真值，5 秒后自动收回，再点一次可提前收回。
+ */
+@Composable
+private fun ScoreCreditRankMetric(credits: String, position: Int?) {
+    val masked = LocalPrivacyMode.current && PrivacyModeState.rankMasked
+    var revealed by remember(masked, position) { mutableStateOf(false) }
+    LaunchedEffect(revealed) {
+        if (revealed) {
+            delay(RANK_REVEAL_MILLIS)
+            revealed = false
+        }
+    }
+    // rank 标签与数字都比正文指标大一倍（放大 100%）；右侧内边距仍是 14dp。
+    val rankLabelSize = MaterialTheme.typography.labelMedium.fontSize * 2
+    val rankLabelStyle = MaterialTheme.typography.labelMedium.copy(
+        fontSize = rankLabelSize,
+        lineHeight = rankLabelSize * 1.15f,
+    )
+    val rankValueSize = MaterialTheme.typography.titleMedium.fontSize * 2
+    val rankValueStyle = MaterialTheme.typography.titleMedium.copy(
+        fontSize = rankValueSize,
+        lineHeight = rankValueSize * 1.15f,
+    )
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = AppInnerShape,
+        modifier = Modifier.fillMaxWidth().height(68.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(verticalArrangement = Arrangement.Center) {
+                PrivacyText(
+                    "已修总学分",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                PrivacyText(credits, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+            Spacer(Modifier.weight(1f))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PrivacyText(
+                    "rank",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = rankLabelStyle,
+                )
+                PrivacyText(
+                    rankValueText(position, mask = masked && !revealed),
+                    style = rankValueStyle,
+                    fontWeight = FontWeight.Bold,
+                    // 名次用主题深蓝，与左侧学分（正文色）区分开；深色模式自动转浅蓝保可读。
+                    color = themePrimaryDeep(),
+                    maxLines = 1,
+                    modifier = Modifier
+                        .then(if (masked) Modifier.clickable { revealed = !revealed } else Modifier)
+                        .testTag("score-overall-rank"),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 排名的显示值。[mask] 为真时只把数字换成**等长**的星号：25 → `**`，147 → `***`。
+ * 位数本身也是信息，所以既不能固定长度，也不能整块隐藏。
+ */
+@Composable
+private fun rankValueText(position: Int?, mask: Boolean): String {
+    if (position == null) return "—"
+    val digits = position.toString()
+    return if (mask) "*".repeat(digits.length) else digits
+}
+
+/**
+ * 四项统计的两行布局，只用于概览面板（模拟面板每格是「当前 → 计入后」，不走这里）。
+ * 汇总四项固定 4 位小数（长图同口径）；单门课的成绩/学分/绩点走
+ * [scoreCourseScoreText] / [scoreCourseCreditText] / [scoreCoursePointText]，不补零。
+ */
 @Composable
 private fun ScoreSummaryMetricRows(summary: XmuScoreSummary) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        ScoreMetric("平均绩点", scoreMetricText(summary.averageGpa), Modifier.weight(1f))
-        ScoreMetric("加权绩点", scoreMetricText(summary.weightedGpa), Modifier.weight(1f))
+        ScoreMetric("平均绩点", scoreMetricText(summary.averageGpa, 4), Modifier.weight(1f))
+        ScoreMetric("加权绩点", scoreMetricText(summary.weightedGpa, 4), Modifier.weight(1f))
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        ScoreMetric("平均分数", scoreMetricText(summary.averageScore), Modifier.weight(1f))
-        ScoreMetric("加权分数", scoreMetricText(summary.weightedScore), Modifier.weight(1f))
+        ScoreMetric("平均分数", scoreMetricText(summary.averageScore, 4), Modifier.weight(1f))
+        ScoreMetric("加权分数", scoreMetricText(summary.weightedScore, 4), Modifier.weight(1f))
     }
 }
 
@@ -731,6 +824,8 @@ private fun SimulationDeltaMetric(
             verticalArrangement = Arrangement.Center,
         ) {
             PrivacyText(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+            // 模拟面板展示 2 位：计算值是 4 位（xmuSimulatedSummary 已落 4 位），
+            // 这里只负责四舍五入到 2 位展示。两值都短，回到 labelMedium / titleSmall。
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 PrivacyText(
                     scoreMetricText(before),
@@ -812,13 +907,13 @@ fun ScoreRecordCard(record: XmuScoreRecord) {
                     Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 6.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    PrivacyText(record.score?.let(::scoreMetricText) ?: scoreResultText(record), fontWeight = FontWeight.Bold, color = if (scoreIsExcellent(record)) themeSuccess() else themePrimary())
+                    PrivacyText(record.score?.let(::scoreCourseScoreText) ?: scoreResultText(record), fontWeight = FontWeight.Bold, color = if (scoreIsExcellent(record)) themeSuccess() else themePrimary())
                 }
             }
             Column(Modifier.weight(1f)) {
                 PrivacyText(record.courseName, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 PrivacyText(
-                    "${scoreMetricText(record.credit)} 学分 · 绩点 ${scoreMetricText(record.gradePoint)}",
+                    "${scoreCourseCreditText(record.credit)} 学分 · 绩点 ${scoreCoursePointText(record.gradePoint)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -836,20 +931,36 @@ private val ExcellentGradeTexts = setOf("A+", "A", "A-", "优", "优秀")
 fun scoreIsExcellent(record: XmuScoreRecord): Boolean =
     (record.score ?: 0.0) >= 90.0 || scoreResultText(record) in ExcellentGradeTexts
 
-fun scoreMetricText(value: Double?): String =
-    value?.let { String.format(Locale.US, "%.2f", it) } ?: "-"
+fun scoreMetricText(value: Double?, decimals: Int = 2): String =
+    value?.let { String.format(Locale.US, "%.${decimals}f", it) } ?: "-"
+
+/**
+ * 单门课的成绩：整数不补小数位（87），真有小数才显示（87.5），不靠四舍五入抹掉有效位。
+ * 与汇总四项固定 4 位不同——单门值是站内原值，补零只是噪音。
+ */
+fun scoreCourseScoreText(value: Double?): String = scoreTrimZeros(value)
+
+/** 单门课的绩点：官方换算表只到 1 位小数，固定 1 位（3.7 / 4.0）。 */
+fun scoreCoursePointText(value: Double?): String =
+    value?.let { String.format(Locale.US, "%.1f", it) } ?: "-"
+
+/** 单门课的学分：3 / 2.5，同样不补零。 */
+fun scoreCourseCreditText(value: Double?): String = scoreTrimZeros(value)
+
+private fun scoreTrimZeros(value: Double?): String =
+    value?.let { String.format(Locale.US, "%.2f", it).trimEnd('0').trimEnd('.') } ?: "-"
 
 fun scoreRecordDetail(record: XmuScoreRecord): String =
     if (record.score != null) {
-        "成绩 ${scoreMetricText(record.score)} · 绩点 ${scoreMetricText(record.gradePoint)} · 学分 ${scoreMetricText(record.credit)}"
+        "成绩 ${scoreCourseScoreText(record.score)} · 绩点 ${scoreCoursePointText(record.gradePoint)} · 学分 ${scoreCourseCreditText(record.credit)}"
     } else {
         val result = scoreResultText(record)
         // 等级制补出的绩点也展示出来；中文五级制/P/NP 仍无绩点。
-        val point = record.gradePoint?.let { " · 绩点 ${scoreMetricText(it)}" }.orEmpty()
+        val point = record.gradePoint?.let { " · 绩点 ${scoreCoursePointText(it)}" }.orEmpty()
         if (isTwoLevelScore(record)) {
-            "成绩 $result$point · 学分 ${scoreMetricText(record.credit)}"
+            "成绩 $result$point · 学分 ${scoreCourseCreditText(record.credit)}"
         } else {
-            "成绩 $result · ${scoreGradeModeText(record)}$point · 学分 ${scoreMetricText(record.credit)}"
+            "成绩 $result · ${scoreGradeModeText(record)}$point · 学分 ${scoreCourseCreditText(record.credit)}"
         }
     }
 
@@ -901,6 +1012,30 @@ fun OptionRow(label: String, options: List<String>, selected: String, onSelected
     }
 }
 
+/**
+ * 长中文文件名断行：只在汉字相邻处插入零宽空格 U+200B 提供断点。
+ * 两侧都是 ASCII 时不插，保住 ".pptx"、"(1)"、数字编号等序列的整体性，
+ * 避免像逐字符插入那样把扩展名拆成 ".ppt" + 孤立的 "x"。仅用于界面显示。
+ */
+private fun breakableFileName(name: String): String {
+    fun isCjk(ch: Char): Boolean {
+        val c = ch.code
+        return c in 0x3400..0x4DBF || // CJK 扩展 A
+            c in 0x4E00..0x9FFF || // CJK 统一汉字
+            c in 0xF900..0xFAFF // CJK 兼容汉字
+    }
+    val sb = StringBuilder(name.length + 16)
+    var prevCjk = false
+    for (ch in name) {
+        val cjk = isCjk(ch)
+        // 任一侧是汉字就给断点；两侧都是 ASCII 不插，保护扩展名与编号不被拆开。
+        if (sb.isNotEmpty() && (prevCjk || cjk)) sb.append('\u200B')
+        sb.append(ch)
+        prevCjk = cjk
+    }
+    return sb.toString()
+}
+
 @Composable
 fun CoursewareItemCard(
     item: CoursewareUiItem,
@@ -908,10 +1043,15 @@ fun CoursewareItemCard(
     onToggle: () -> Unit,
     /**该课件曾成功落盘（持久化标记），显示「已下载」。 */
     downloaded: Boolean = false,
-    /**「检查」扫到标记已下载、但本地目录里没有该文件：角标改「？已下载」暗橙字。 */
+    /**「检查本地」扫到标记已下载、但本地目录里没有该文件：角标改「？已下载」暗橙字。 */
     missingLocal: Boolean = false,
 ) {
     val failed = item.downloadStatus.startsWith("下载失败")
+    // 落盘文件名按真实名字显示：隐私模式只遮蔽界面文案，不能把文件名也换词。
+    // 中文长文件名夹 "-" "+" 时平台断行会把中间一段当不可拆词组，导致首行越界。
+    // breakableFileName 只在汉字边界插零宽空格，英文/数字/扩展名保持整体，
+    // 既给出逐字断点保住右边界，又不会把 ".pptx" 拆成 ".ppt" + 孤立的 "x"。
+    val displayFileName = breakableFileName(item.filename.ifBlank { "入口文件" })
     InfoCard(container = if (failed) themeFailedCard() else MaterialTheme.colorScheme.surface) {
         // 整行可点（toggleable）：只有 Checkbox 可点命中率太低，触控/无障碍都不达标。
         Row(
@@ -937,7 +1077,15 @@ fun CoursewareItemCard(
                 // 去掉 Bold，避免视觉上压过同字号的课程名。
                 PrivacyText(item.title, style = MaterialTheme.typography.bodyMedium)
                 if (item.moduleName.isNotBlank()) PrivacyText("章节：${item.moduleName}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                PrivacyText("文件名：${item.filename.ifBlank { "入口文件" }}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 行宽与课件条目间的 HorizontalDivider 严格对齐：分割线在 padding(start=30dp)
+                // 的容器里带 end=29.dp，卡片内部 padding 12dp，文件名 fillMaxWidth 顶到内容右缘，
+                // 因此这里再收 29-12=17dp，右边界才与分割线齐平，长名换行也不会越出去。
+                PrivacyText(
+                    "文件名：${privacyLiteral(displayFileName)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(end = 17.dp),
+                )
                 PrivacyText("类型：${item.type}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(
                     modifier = Modifier.fillMaxWidth(),

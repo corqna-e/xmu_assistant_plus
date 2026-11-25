@@ -116,7 +116,12 @@ internal class HomeActions(
                             settings.scoreCookieHeader = ""
                             settings.scoreRecordsJson = ""
                             settings.scoreUpdatedAtMillis = 0L
-                            settings.academicCacheJson = ""
+                            // 缓存清理：先作废进程快照并等已准入写入结束，再清持久化，
+                            // 避免旧账号在途写在本轮清空之后回填。
+                            clearAcademicCachePersistence(
+                                invalidateCache = { setAcademicCache(AcademicCacheSnapshot()) },
+                                clearCacheJson = { settings.academicCacheJson = "" },
+                            )
                             schedule.clearAll()
                             // 等待后台课表的本地提交后再清一次，避免已进入的 setter 回填旧会话。
                             settings.scoreCookieHeader = ""
@@ -125,7 +130,6 @@ internal class HomeActions(
                             deleteRollcallHistoryCacheFile(activity)
                             ScheduleWidgetData.clear(activity)
                             ScheduleWidgetProvider.refreshAll(activity)
-                            setAcademicCache(AcademicCacheSnapshot())
                             setCourses(emptyList())
                             setSelectedCourseId(null)
                             courseware.clearAll()
@@ -241,7 +245,7 @@ internal class HomeActions(
     ) {
         if (monitorTransitionInProgress) return
         // 注意：monitorTransitionId 是参数快照（重组时更新），
-        // 必须先算新值再写，随后用同一新值作本次的 stop 身份；
+        // 必须先算新值再写，随后用同一新值作本轮的 stop 身份；
         // 不能在 setter 之后再读参数（读到的是旧值，会令
         // monitorTransitionId != stopTransitionId 恒成立 → 永不复位）。
         val nextTransitionId = monitorTransitionId + 1

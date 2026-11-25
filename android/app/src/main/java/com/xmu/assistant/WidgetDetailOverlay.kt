@@ -140,7 +140,7 @@ internal object WidgetDetailOverlay {
      * 真机已确认：荣耀桌面在 ACTION_DOWN/UP 会对整个 AppWidgetHostView 播一次缩放回弹，
      * 点组件空白区（App 完全不响应）照样播，与我们的重绘、覆盖层、PendingIntent 类型都无关。
      * 既然动效改不掉，就把弹窗推迟到动效播完：卡片已经静止，遮罩和详情卡就不会跟着一起
-     * 被「按进去」再弹出来。0.5s 是的时长。
+     * 被「按进去」再弹出来。0.5s 是用户指定的时长。
      *
      * 收起（HIDE）不延迟，否则关闭会显得迟钝；关闭同时取消尚未执行的 SHOW，
      * 避免 0.5s 后弹窗又自己冒出来。两个组件按 source 各自排队，互不取消。
@@ -396,7 +396,7 @@ internal fun applyDetailOverlay(
         R.id.detail_section,
         "节次：${detail.startSection}—${detail.endSection}节",
     )
-    // 考试没有周次与教师：硬套「周次：考试」字段名与内容对不上，地点也该叫考场。
+    // 考试没有周次与教师：硬套「周次：考试」会把字段名和内容对不上，地点也该叫考场。
     if (detail.isExam) {
         views.setTextViewText(R.id.detail_weeks, "考试")
         views.setTextViewText(

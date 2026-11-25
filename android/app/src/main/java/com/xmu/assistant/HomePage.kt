@@ -299,7 +299,7 @@ fun HomePage(
         // 使用教程移到首页底部并更名；「后台提醒正常」已收入教程页的「使用前准备」板块。
         // 更多页底部也提供同一入口；此处保留首页快捷跳转，返回目标按工具页规则处理。
         // 首页这张卡阴影单独加到 2dp，与账号卡形成主次（其余卡片仍 1dp）。
-        // 曾加过顶端渐隐的浅阴影，按需求删去 —— 只保留卡片自身的 2dp 阴影。
+        // 不再加顶端渐隐的浅阴影，只保留卡片自身的 2dp 阴影。
         PreviewCard(
             onClick = { onNavigate("教程") },
             shadowElevation = 2.dp,
@@ -356,7 +356,7 @@ fun HomePage(
     }
 }
 
-/** 签到监控状态卡：整体压低，右上角设置按钮跳策略页（恢复）。 */
+/** 签到监控状态卡：整体压低，右上角设置按钮跳策略页。 */
 @Composable
 private fun MonitorStatusCard(
     loggedIn: Boolean,
@@ -371,7 +371,7 @@ private fun MonitorStatusCard(
 ) {
     Box(
         modifier = Modifier.fillMaxWidth()
-            // 方案一：首页头部渐变卡与内容卡统一大圆角，并补一层柔和投影。
+            // 首页头部渐变卡与内容卡统一大圆角，并补一层柔和投影。
             .shadow(AppCardElevation, RoundedCornerShape(20.dp))
             .background(AppHeaderBrush, RoundedCornerShape(20.dp))
             .heightIn(min = 104.dp)
@@ -457,13 +457,13 @@ internal fun homeAutoAnswerSummary(settings: RollcallSettings): String =
  * （minimumInteractiveComponentSize），两枚竖排合计约 98dp，把整张账号卡锁死在
  * 约 114dp —— 减 padding、缩字号都无效。这里显式关掉该下限，胶囊回到内容高度
  * （约 17dp），外观、ripple、点击语义、enabled 态全部保留。
- * 定版：关掉 48dp 后曾把按钮压到「几乎贴在一起」，太挤，
- * 故把按钮垂直内边距回调到 4dp、两键间距 5dp、卡片上下留白 10dp —— 仍远低于原来的 114dp。
+ * 关掉 48dp 最小交互尺寸后按钮会「几乎贴在一起」，显得太挤，
+ * 故把按钮垂直内边距收到 4dp、两键间距 5dp、卡片上下留白 10dp —— 远低于原先的 114dp。
  *账号卡改用与「使用准备与教程」卡同构的 PreviewListRow 后，两键竖排加起来比左侧两行文字高，
  * 反而把卡片顶高，教程卡不动，两张卡就不齐。按钮垂直内边距 4→2dp 后两键总高降到低于左侧两行文字，
  * 卡片高度重新由文字决定，与教程卡对齐。
  * 注意：这里的间距一律用 dp 表达，不按截图量像素反推 —— 换设备、换桌面网格、改系统字体大小都会失配。
- * 实测依据一：的 TextButton 同样是 48dp，改回 TextButton 并不能降低高度。
+ * 实测依据一：TextButton 同样是 48dp，改回 TextButton 并不能降低高度。
  * 实测依据二：material3 1.3.0 中 LocalMinimumInteractiveComponentEnforcement（Boolean）
  * 已弃用且不再被 MinimumInteractiveModifierNode 读取，真正生效的是
  * LocalMinimumInteractiveComponentSize（Dp）；两个一起提供，兼容新旧读取路径。

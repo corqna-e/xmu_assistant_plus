@@ -53,7 +53,7 @@ fun refreshModuleForPage(page: Page): RefreshModule = when (page) {
 
 fun moduleFreshnessMillis(module: RefreshModule): Long = when (module) {
     RefreshModule.ROLLCALL -> 15_000L
-    // 成绩：用户拍板由 120s 放宽到 5 分钟（真机联调），与历史签到窗对齐
+    // 成绩：120s 放宽到 5 分钟，与历史签到窗对齐
     RefreshModule.SCORES -> 300_000L
     RefreshModule.COURSES -> 300_000L
     RefreshModule.NONE -> 0L

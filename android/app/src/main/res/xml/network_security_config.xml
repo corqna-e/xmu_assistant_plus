@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   仅允许 HTTPS。当前没有任何域名需要明文兜底：
-  地图选点自 改为自绘公开栅格瓦片（TileMapPicker.kt，https://wprd0X.is.autonavi.com），
+  地图选点自 v29 起改为自绘公开栅格瓦片（TileMapPicker.kt，https://wprd0X.is.autonavi.com），
   高德 SDK 已从依赖里移除，因此原为 SDK 内 WebView 保留的
   amap / autonavi / aliyun / amapauto 明文白名单一并删除。
   新增例外前请先确认对方确实不支持 HTTPS。

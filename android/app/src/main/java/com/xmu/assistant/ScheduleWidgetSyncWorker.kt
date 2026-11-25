@@ -122,9 +122,13 @@ internal class ScheduleWidgetSyncRun(private val context: Context) {
                 if (!persistenceGate.advanceIfCurrent(revision)) return@persistIfLatest
                 settings.scoreCookieHeader = result.jwCookie
                 saveScheduleSnapshotToFile(context, snapshot)
-                syncScheduleWidget(context, snapshot.entries, snapshot.termCode,
-                    inferredCalendar = snapshot.inferredCalendars[snapshot.termCode],
-                    manualWeek = settings.manualAcademicWeek(termCode))
+                // 同进程课表快照必须一起更新：只写文件的话，Activity 重建会优先复用旧快照，
+                // 再把桌面组件回滚成刷新前的内容。版本由 advanceIfCurrent 推进到 revision + 1。
+                ScheduleSectionState.updateProcessScheduleSnapshotIfCurrent(snapshot, revision + 1) {
+                    syncScheduleWidget(context, snapshot.entries, snapshot.termCode,
+                        inferredCalendar = snapshot.inferredCalendars[snapshot.termCode],
+                        manualWeek = settings.manualAcademicWeek(termCode))
+                }
             }
             Result.success()
         } catch (error: kotlinx.coroutines.CancellationException) {

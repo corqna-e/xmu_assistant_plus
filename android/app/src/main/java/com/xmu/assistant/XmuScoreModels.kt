@@ -36,11 +36,14 @@ fun xmuScoreSummary(records: List<XmuScoreRecord>): XmuScoreSummary {
     val scoreRecords = gpaRecords.filter { it.score != null }
     val gpaCredits = gpaRecords.sumOf { it.credit }
     val scoreCredits = scoreRecords.sumOf { it.credit }
+    // 四项统计保留真实除法结果，不在计算阶段取整：概览按 4 位小数展示，
+    // 提前抹到 2 位会让第 3、4 位恒为 0（假精度）。只有已修总学分仍取整，
+    // 它的真值是学分求和、小数位不超过 2 位，取整只用于压掉浮点尾差。
     return XmuScoreSummary(
-        averageGpa = gpaRecords.takeIf { it.isNotEmpty() }?.let { it.sumOf { record -> record.gradePoint ?: 0.0 }.div(it.size).roundScoreMetric() },
-        weightedGpa = if (gpaCredits > 0) gpaRecords.sumOf { (it.gradePoint ?: 0.0) * it.credit }.div(gpaCredits).roundScoreMetric() else null,
-        averageScore = scoreRecords.takeIf { it.isNotEmpty() }?.let { it.sumOf { record -> record.score ?: 0.0 }.div(it.size).roundScoreMetric() },
-        weightedScore = if (scoreCredits > 0) scoreRecords.sumOf { (it.score ?: 0.0) * it.credit }.div(scoreCredits).roundScoreMetric() else null,
+        averageGpa = gpaRecords.takeIf { it.isNotEmpty() }?.let { it.sumOf { record -> record.gradePoint ?: 0.0 }.div(it.size) },
+        weightedGpa = if (gpaCredits > 0) gpaRecords.sumOf { (it.gradePoint ?: 0.0) * it.credit }.div(gpaCredits) else null,
+        averageScore = scoreRecords.takeIf { it.isNotEmpty() }?.let { it.sumOf { record -> record.score ?: 0.0 }.div(it.size) },
+        weightedScore = if (scoreCredits > 0) scoreRecords.sumOf { (it.score ?: 0.0) * it.credit }.div(scoreCredits) else null,
         completedCredits = records.filter { it.countsForCompletedCredit }.sumOf { it.credit }.roundScoreMetric(),
     )
 }
@@ -108,10 +111,20 @@ fun xmuSimulatedScoreRecord(scoreText: String, creditText: String): XmuScoreReco
  * 把模拟行并入真实成绩记录后的整体汇总（复用官方口径 xmuScoreSummary）。
  * 没有有效模拟行时结果与 xmuScoreSummary(records) 完全一致（空模拟=现状）。
  */
-fun xmuSimulatedSummary(records: List<XmuScoreRecord>, simulationRows: List<Pair<String, String>>): XmuScoreSummary =
-    xmuScoreSummary(records + simulationRows.mapNotNull { (scoreText, creditText) ->
+fun xmuSimulatedSummary(records: List<XmuScoreRecord>, simulationRows: List<Pair<String, String>>): XmuScoreSummary {
+    val summary = xmuScoreSummary(records + simulationRows.mapNotNull { (scoreText, creditText) ->
         xmuSimulatedScoreRecord(scoreText, creditText)
     })
+    // 模拟面板的计算口径是 4 位：先把商四舍五入到 4 位，展示层再舍到 2 位。
+    // 直接拿全精度去展示 2 位会让「当前」与「计入后」各舍一次，
+    // 与概览的 4 位值对不上账；统一先落到 4 位再展示，两处互相对得住。
+    return summary.copy(
+        averageGpa = summary.averageGpa?.roundSimulatedMetric(),
+        weightedGpa = summary.weightedGpa?.roundSimulatedMetric(),
+        averageScore = summary.averageScore?.roundSimulatedMetric(),
+        weightedScore = summary.weightedScore?.roundSimulatedMetric(),
+    )
+}
 
 fun xmuScoreRecordsToJson(records: List<XmuScoreRecord>): String =
     JSONArray(records.map { record ->
@@ -171,3 +184,6 @@ private fun JSONObject.optNullableDouble(key: String): Double? =
     if (isNull(key)) null else optDouble(key).takeIf { it.isFinite() }
 
 private fun Double.roundScoreMetric(): Double = round(this * 100.0) / 100.0
+
+/** 模拟面板的计算精度：4 位（展示层再舍到 2 位）。 */
+private fun Double.roundSimulatedMetric(): Double = round(this * 10000.0) / 10000.0

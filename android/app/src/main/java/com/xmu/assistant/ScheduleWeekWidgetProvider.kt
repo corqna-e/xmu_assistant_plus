@@ -268,8 +268,8 @@ class ScheduleWeekWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.week_empty, View.GONE)
 
             // —— 表头：月份 + 七格「星期 / 日号」，今天那一格加圆角底片 ——
-            // 月份跟着「正在显示的这一周」走（周一所在月）；写死今天会出现
-            // 表头月份与日号跨月错位。
+            // 月份必须跟着「正在显示的这一周」走（周一所在月），翻到别的周后还写今天
+            // 的月份会出现「表头 11 月、日号却是 12 月」的错位。
             val monday = runCatching { java.time.LocalDate.ofEpochDay(snapshot.mondayEpochDay) }.getOrNull()
             views.setTextViewText(R.id.week_month, "${(monday ?: today).monthValue}月")
             val highlightToday = renderWeek == 0

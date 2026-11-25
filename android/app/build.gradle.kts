@@ -6,7 +6,7 @@ plugins {
 }
 
 /**
- * 发布签名口令从 local.properties 读取，不写进仓库。
+ * v112：发布签名口令从 local.properties 读取，不写进仓库。
  * 仓库里的 keystore/debug.keystore 是所有人共有的调试密钥，
  * 用它签 release 等于任何人拿到仓库就能伪造同包名覆盖包。
  */
@@ -25,11 +25,14 @@ android {
         applicationId = "com.xmu.assistant.xia"
         minSdk = 26
         targetSdk = 35
-        // versionCode 仅作内部构建号，用于 dumpsys / adb install
-        // 判断「装进去的是否为新包」，界面上不展示。
-        versionCode = 161
-        versionName = "1.2"
+        // versionName 只随用户要求变动（2026-11-19 由基座版本 1.8.4 改为 1.0，
+        // 2026-11-20 升为 1.1，2026-11-25 升为 1.3）。轮次只体现在安装包文件名的 vNN 上；
+        // versionCode 仅作内部构建号，用于 dumpsys / adb install 判断
+        // 「装进去的是否为新包」，界面上不展示。
+        versionCode = 208
+        versionName = "1.3"
         buildConfigField("boolean", "NETWORK_METRICS", "false")
+        // v24：改用高德轻量版地图 SDK（纯 jar，零 so），不再需要 abiFilters。
     }
 
     buildFeatures {
@@ -47,7 +50,7 @@ android {
     }
 
     packaging {
-        // AGP 8 默认 extractNativeLibs=false，so 以「不压缩」形式进 APK，
+        // v17：AGP 8 默认 extractNativeLibs=false，so 以「不压缩」形式进 APK，
         // 高德那一颗 libAMapSDK_MAP 就有 19MB，直接把安装包从 4MB 顶到 27MB。
         // 打开 legacy packaging 后 so 会被 zip 压缩（19MB → 约 7.3MB），
         // 安装包回落到 15MB 上下；代价只是安装时解压到 /data（运行时占用不变）。
@@ -77,7 +80,7 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
-        // 发布签名。keystore 与口令都不进仓库：文件在 .gitignore 里，
+        // v112：发布签名。keystore 与口令都不进仓库：文件在 .gitignore 里，
         // 口令在 local.properties 的 xmu.release.* 四项。
         create("release") {
             val props = releaseSigningProperties()
@@ -93,7 +96,7 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
         getByName("release") {
-            // 独立发布签名：已装 debug 签名包的设备无法覆盖升级，
+            // v112：独立发布签名。从这一版起，已装 debug 签名包的设备无法覆盖升级，
             // 必须卸载重装（本地数据丢一次）—— 这是换掉公共调试密钥的必然代价。
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
@@ -112,7 +115,7 @@ kotlin {
 
 dependencies {
     implementation(libs.pdfbox.android)
-    // 地图选点使用自绘瓦片（TileMapPicker.kt），不依赖任何高德 SDK。
+    // v29：地图选点改为自绘瓦片（TileMapPicker.kt），不再依赖任何高德 SDK。
     // 轻量版 SDK 内置的 JS API Key 已被高德判 INVALID_USER_KEY，官方无修复版；
     // 公开栅格瓦片无需 Key、无需鉴权，jar 与 assets 一起从 APK 里彻底消失。
     implementation(libs.androidx.activity.compose)
@@ -127,7 +130,7 @@ dependencies {
     implementation(libs.okhttp)
 }
 
-// 缺口令时让 release 构建立刻失败，而不是签出一个不可发布的包、
+// v112：缺口令时让 release 构建立刻失败，而不是签出一个不可发布的包、
 // 或者悄悄退回仓库里的公共调试密钥。
 gradle.taskGraph.whenReady {
     if (allTasks.any { it.name.contains("Release", ignoreCase = true) }) {

@@ -139,7 +139,7 @@ internal class XmuExamClient(
         @Suppress("UNCHECKED_CAST")
         val exams = (results[0] as Result<List<XmuExam>>).getOrElse { error ->
             if (error is ExamSessionExpiredException || error is ExamNetworkException ||
-                error is AcademicLoginBlockedException
+                error is AcademicLoginBlockedException || error is ExamLoginInProgressException
             ) throw error
             // 格式/解析异常是服务端数据问题：明确抛出（上层显示"接口返回异常"），
             // 绝不静默成"暂无安排"；只有合法 JSON 且 rows 空才视为真空学期。
@@ -148,7 +148,7 @@ internal class XmuExamClient(
         @Suppress("UNCHECKED_CAST")
         val unarranged = (results[1] as Result<List<XmuExamUnarranged>>).getOrElse { error ->
             if (error is ExamSessionExpiredException || error is ExamNetworkException ||
-                error is AcademicLoginBlockedException
+                error is AcademicLoginBlockedException || error is ExamLoginInProgressException
             ) throw error
             throw ExamResponseException(cause = error)
         }
@@ -184,6 +184,10 @@ internal class XmuExamClient(
         }
         // 会话世代已变化（登出/重新登录）：明确会话过期
         throw ExamSessionExpiredException()
+    } catch (error: AcademicLoginInProgressException) {
+        // 单飞门在途（课表/成绩正在打 CAS 登录）：登录处理中，稍后重试即可，
+        // 绝不报「登录已过期」。
+        throw ExamLoginInProgressException()
     }
 
     /**
@@ -412,7 +416,7 @@ internal class XmuExamClient(
         val startedAt = System.currentTimeMillis()
         val response = base.request(url, "POST", body, referer = EXAM_REFERER, operation = NetworkOperation.EXAM, applyPostHeaders = true)
         JwDebugLog.d("REQ POST $path -> ${response.code} ${System.currentTimeMillis() - startedAt}ms")
-        // 风控约束：只有"真会话失效"（401/403/重定向到统一登录域/登录页特征）才判过期触发续登；
+        // 风控红线：只有"真会话失效"（401/403/重定向到统一登录域/登录页特征）才判过期触发续登；
         // 5xx、非鉴权 4xx、服务端坏页一律归为响应异常，绝不触发 CAS 重登（与成绩格式/会话严格区分同构）。
         if (response.isSessionExpired()) {
             throw ExamSessionExpiredException()

@@ -90,7 +90,7 @@ internal fun buildScheduleWidgetViews(
         views.setTextViewText(R.id.widget_empty, text)
         return views
     }
-    if (!enabled) return empty("小卡片已关闭\n在「更多 → 通知与外观」中开启")
+    if (!enabled) return empty("小卡片已关闭\n在「更多 → 外观与通知」中开启")
     if (snapshot == null) return empty("课表还未同步\n打开课表，刷新后即可查看")
     // Validate the date before the empty-course branch: yesterday's free day is not today's free day.
     if (snapshot.savedEpochDay != today.toEpochDay()) return empty("今日课表待更新\n点击打开课表刷新")

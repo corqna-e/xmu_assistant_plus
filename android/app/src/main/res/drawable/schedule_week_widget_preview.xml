@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 周课表组件的静态预览图，供系统「添加小组件」列表显示。
 
-     此前只写了 previewLayout（指向真实布局，且列容器是运行时 addView 填充的，
+     v76：此前只写了 previewLayout（指向真实布局，且列容器是运行时 addView 填充的，
      预览里只会是一张空表格）。部分桌面不实现 Android 12 的 previewLayout 动态渲染，
      只认 previewImage，于是这个组件在列表里根本不出现 —— 表现为「只有一个小组件」。
      改成一张独立的静态预览图，与今日课程组件的 previewImage 一一对应。 -->

@@ -271,7 +271,7 @@ internal fun processRollcallMonitorPoll(
         }
     }
     // 单个签到的拒绝/网络失败不应饿死同轮其它签到；处理完后仍上报首个错误，
-    // 由监控记录本次失败，绝不把局部成功当作整体健康。
+    // 由监控记录本轮失败，绝不把局部成功当作整体健康。
     firstAnswerFailure?.let { throw it }
     if (!hasUnresolvedAnswerFailure) runIfActive(onSuccess)
 }

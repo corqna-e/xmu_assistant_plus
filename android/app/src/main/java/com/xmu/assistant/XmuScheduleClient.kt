@@ -17,10 +17,12 @@ internal fun normalizeScheduleFailure(error: Throwable): Throwable = when {
     error is ScheduleSessionExpiredException ||
         error is ScheduleNetworkException ||
         error is ScheduleResponseException ||
+        error is AcademicLoginInProgressException ||
+        error is AcademicLoginBlockedException ||
         error is ScheduleTermUnavailableException -> error
     // 跨模块「真会话失效」类型化异常（成绩/会话恢复模块抛出）：统一归一化，
     // 触发上层续登。不再按错误消息关键词猜测（消息扫描会把非会话的解析/URL 异常
-    // 误判为会话过期 → 误触发 CAS 续登，风控约束）。
+    // 误判为会话过期 → 误触发 CAS 续登，风控红线）。
     error is MainSessionExpiredException ||
         error is ScoreSessionExpiredException -> ScheduleSessionExpiredException()
     error is IOException -> ScheduleNetworkException(error)
@@ -76,7 +78,7 @@ internal class XmuScheduleClient(
             scheduleThread.join()
             weekThread.join()
             // 课表线程结果优先：失败则按其异常类型上抛（会话过期 → 上层续登；
-            // 网络/格式 → 不触发续登，风控约束）。
+            // 网络/格式 → 不触发续登，风控红线）。
             scheduleFailure.get()?.let { throw it }
             entries = scheduleEntries.get() ?: emptyList()
             currentWeek = week.get()
@@ -127,7 +129,7 @@ internal class XmuScheduleClient(
                     mapOf(
                         "XNXQDM" to termCode,
                         "XH" to studentNumber,
-                        // 实测（2026-08-14）：服务端会把 ZC 当作周次过滤条件，ZC=1 时
+                        // 实测：服务端会把 ZC 当作周次过滤条件，ZC=1 时
                         // 只返回第 1 周命中的记录，导致 3-6,8,13-14周 这类互补周次段
                         // 的课程（如数据结构周一/周二）在本地按周过滤后丢失。
                         // 网页端不传 ZC，返回全学期 32 条，由客户端 forWeek() 过滤，

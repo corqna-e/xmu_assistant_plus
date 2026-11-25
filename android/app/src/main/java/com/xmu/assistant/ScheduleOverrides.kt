@@ -38,25 +38,27 @@ internal data class ScheduleCourseOverride(
  */
 internal class ScheduleOverrideStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    // 解析结果缓存：整学期投影会反复读同一份 JSON，按原文命中即复用。
+    private var cachedRaw: String? = null
+    private var cachedItems: List<StoredScheduleOverride> = emptyList()
 
     /**
      * 取该课程在 [week] 这一周的最终安排：具体周调整优先于整学期调整；
      * [week] 传 null 时只认整学期调整（调用方不掌握周次的场景）。
      */
-    @Synchronized
-    fun apply(termCode: String, group: XmuScheduleGroup, week: Int? = null): XmuScheduleGroup {
+    fun apply(termCode: String, group: XmuScheduleGroup, week: Int? = null): XmuScheduleGroup = synchronized(lock) {
         // 标记删除的记录不参与改期，交给 isWeekCancelled 在列表层剔除。
         val matched = readAll().filter { it.matches(termCode, group, week) && !it.value.deleted }
         val override = matched.firstOrNull { it.scopeWeek != null }?.value
             ?: matched.firstOrNull()?.value
             ?: return group
-        return applyScheduleOverride(group, override)
+        applyScheduleOverride(group, override)
     }
 
     /** 该课程是否存在任意本地调整（含单周调整），用于详情页显示「已修改」。 */
-    @Synchronized
-    fun has(termCode: String, group: XmuScheduleGroup): Boolean =
+    fun has(termCode: String, group: XmuScheduleGroup): Boolean = synchronized(lock) {
         readAll().any { it.matchesAnchor(termCode, group) }
+    }
 
     /**
      * 这学期是否存在任意本地调整。
@@ -64,11 +66,11 @@ internal class ScheduleOverrideStore(context: Context) {
      * 桌面组件按整学期投影（19 周 × 每天），没有调整时不该让每一周都去解析一遍存储：
      * 调用方先用它挡一道，绝大多数用户（从未调过课）走纯投影路径。
      */
-    @Synchronized
-    fun hasAny(termCode: String): Boolean = readAll().any { it.termCode == termCode }
+    fun hasAny(termCode: String): Boolean = synchronized(lock) {
+        readAll().any { it.termCode == termCode }
+    }
 
-    @Synchronized
-    fun save(termCode: String, original: XmuScheduleGroup, value: ScheduleCourseOverride) {
+    fun save(termCode: String, original: XmuScheduleGroup, value: ScheduleCourseOverride) = synchronized(lock) {
         require(value.weekday in 1..7) { "星期必须在 1—7 之间" }
         require(value.startSection in 1..11) { "开始节次必须在 1—11 之间" }
         require(value.endSection in value.startSection..11) { "结束节次不能早于开始节次" }
@@ -92,20 +94,18 @@ internal class ScheduleOverrideStore(context: Context) {
     }
 
     /** 还原为教务安排：删除该课程的全部本地调整（整学期与单周一并清掉）。 */
-    @Synchronized
-    fun remove(termCode: String, original: XmuScheduleGroup): Boolean {
+    fun remove(termCode: String, original: XmuScheduleGroup): Boolean = synchronized(lock) {
         val all = readAll().toMutableList()
         val removed = all.removeAll { it.matchesAnchor(termCode, original) }
         if (removed) writeAll(all)
-        return removed
+        removed
     }
 
     /**
      *把这门课在 [week] 这一周的这次课标记为删除（例如某周停课），其它周次不受影响。
      * 走与调课同一套单周覆盖，因此「课程详情 → 还原」能一并清掉。
      */
-    @Synchronized
-    fun cancelWeek(termCode: String, original: XmuScheduleGroup, week: Int) {
+    fun cancelWeek(termCode: String, original: XmuScheduleGroup, week: Int) = synchronized(lock) {
         save(
             termCode = termCode,
             original = original,
@@ -123,49 +123,56 @@ internal class ScheduleOverrideStore(context: Context) {
     }
 
     /**该课程在 [week] 这一周是否已被标记删除。 */
-    @Synchronized
-    fun isWeekCancelled(termCode: String, group: XmuScheduleGroup, week: Int): Boolean =
+    fun isWeekCancelled(termCode: String, group: XmuScheduleGroup, week: Int): Boolean = synchronized(lock) {
         readAll().any { it.matches(termCode, group, week) && it.value.deleted }
+    }
 
     private fun readAll(): List<StoredScheduleOverride> {
         val raw = prefs.getString(KEY_OVERRIDES, null).orEmpty()
-        if (raw.isBlank()) return emptyList()
-        return runCatching {
-            val rows = JSONArray(raw)
-            buildList {
-                for (index in 0 until rows.length()) {
-                    val row = rows.optJSONObject(index) ?: continue
-                    val value = row.optJSONObject("value") ?: continue
-                    val weekday = value.optInt("weekday")
-                    val startSection = value.optInt("startSection")
-                    val endSection = value.optInt("endSection")
-                    if (weekday !in 1..7 || startSection !in 1..11 || endSection !in startSection..11) continue
-                    // 旧数据没有 scopeWeek 字段 → 0 → 视为整学期调整，语义与升级前一致。
-                    val scopeWeek = value.optInt("scopeWeek", 0).takeIf { it in 1..30 }
-                    add(
-                        StoredScheduleOverride(
-                            termCode = row.optString("termCode"),
-                            courseName = row.optString("courseName"),
-                            originalWeekday = row.optInt("originalWeekday"),
-                            originalStartSection = row.optInt("originalStartSection"),
-                            originalEndSection = row.optInt("originalEndSection"),
-                            value = ScheduleCourseOverride(
-                                weekday = weekday,
-                                startSection = startSection,
-                                endSection = endSection,
-                                room = value.optString("room"),
-                                teacher = value.optString("teacher"),
-                                weeks = value.optString("weeks"),
-                                scopeWeek = scopeWeek,
-                                deleted = value.optBoolean("deleted", false),
-                                // 旧数据无此字段 → null，交给 applyScheduleOverride 按锚点判断。
-                                moved = if (value.has("moved")) value.optBoolean("moved") else null,
+        if (raw == cachedRaw) return cachedItems
+        val parsed = if (raw.isBlank()) {
+            emptyList()
+        } else {
+            runCatching {
+                val rows = JSONArray(raw)
+                buildList {
+                    for (index in 0 until rows.length()) {
+                        val row = rows.optJSONObject(index) ?: continue
+                        val value = row.optJSONObject("value") ?: continue
+                        val weekday = value.optInt("weekday")
+                        val startSection = value.optInt("startSection")
+                        val endSection = value.optInt("endSection")
+                        if (weekday !in 1..7 || startSection !in 1..11 || endSection !in startSection..11) continue
+                        // 旧数据没有 scopeWeek 字段 → 0 → 视为整学期调整，语义与升级前一致。
+                        val scopeWeek = value.optInt("scopeWeek", 0).takeIf { it in 1..30 }
+                        add(
+                            StoredScheduleOverride(
+                                termCode = row.optString("termCode"),
+                                courseName = row.optString("courseName"),
+                                originalWeekday = row.optInt("originalWeekday"),
+                                originalStartSection = row.optInt("originalStartSection"),
+                                originalEndSection = row.optInt("originalEndSection"),
+                                value = ScheduleCourseOverride(
+                                    weekday = weekday,
+                                    startSection = startSection,
+                                    endSection = endSection,
+                                    room = value.optString("room"),
+                                    teacher = value.optString("teacher"),
+                                    weeks = value.optString("weeks"),
+                                    scopeWeek = scopeWeek,
+                                    deleted = value.optBoolean("deleted", false),
+                                    // 旧数据无此字段 → null，交给 applyScheduleOverride 按锚点判断。
+                                    moved = if (value.has("moved")) value.optBoolean("moved") else null,
+                                ),
                             ),
-                        ),
-                    )
+                        )
+                    }
                 }
-            }
-        }.getOrDefault(emptyList())
+            }.getOrDefault(emptyList())
+        }
+        cachedRaw = raw
+        cachedItems = parsed
+        return parsed
     }
 
     private fun writeAll(items: List<StoredScheduleOverride>) {
@@ -193,7 +200,10 @@ internal class ScheduleOverrideStore(context: Context) {
                     .put("value", value),
             )
         }
-        prefs.edit().putString(KEY_OVERRIDES, rows.toString()).apply()
+        val encoded = rows.toString()
+        cachedRaw = encoded
+        cachedItems = items.toList()
+        prefs.edit().putString(KEY_OVERRIDES, encoded).apply()
     }
 
     private data class StoredScheduleOverride(
@@ -220,6 +230,11 @@ internal class ScheduleOverrideStore(context: Context) {
     }
 
     private companion object {
+        /**
+         * 进程级锁：store 是随用随建的对象（组件投影每次新建、课表页另持一个），
+         * 实例级 @Synchronized 各锁各的，等于没有互斥。
+         */
+        val lock = Any()
         const val PREFS_NAME = "xmu_schedule_overrides"
         const val KEY_OVERRIDES = "course_arrangements_v1"
     }
@@ -450,11 +465,6 @@ internal fun applyScheduleOverride(group: XmuScheduleGroup, value: ScheduleCours
     )
 }
 
-/**
- * 节次起始时间（HHMM 整数）。作息唯一来源是 [officialSectionWindows]，
- * 不许再另起一张估算表——旧表（第 2 节 08:50、第 11 节 20:40 等）与厦大官方作息
- * 差 5–20 分钟，调过课的课时间与「正在上课」判定都会跟着错。表外节次退回 fallback。
- */
 /**
  * 节次起始时间（HHMM 整数）。作息唯一来源是 [officialSectionWindows]，
  * 不许再另起一张估算表——旧表（第 2 节 08:50、第 11 节 20:40 等）与厦大官方作息

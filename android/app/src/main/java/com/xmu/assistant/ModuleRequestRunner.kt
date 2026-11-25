@@ -39,11 +39,23 @@ internal fun <T> CoroutineScope.runModuleRequest(
     onFinally: () -> Unit = {},
 ): Job = launchGatedRequest(requestGate, gateKey) {
     val result = runCatching { ioWork() }.let { first ->
-        // 只有网络类瞬时失败才重试；会话过期（MainSessionExpiredException）与
-        // 业务拒绝原样返回，避免把「登录已过期」延后 1.2 秒才告知。
+        // 只有「瞬时」失败才重试：
+        // - IOException：网络栈尚未就绪；
+        // - AcademicLoginInProgressException：其他模块正在打教务 CAS 登录（冷启动首刷
+        //   课表先起登录，成绩/考试紧接着撞门）。等它跑完再取会话，既不报错也不重复登录。
+        // 会话过期与业务拒绝原样返回，避免把「登录已过期」延后告知。
         // 本骨架只承载读取（各模块 refresh），写请求不经此处，重试不会造成重复提交。
-        if (first.exceptionOrNull() is IOException) {
-            delay(NETWORK_RETRY_DELAY_MILLIS)
+        val transient = first.exceptionOrNull().let { error ->
+            error is IOException || error is AcademicLoginInProgressException
+        }
+        if (transient) {
+            delay(
+                if (first.exceptionOrNull() is AcademicLoginInProgressException) {
+                    LOGIN_IN_PROGRESS_RETRY_DELAY_MILLIS
+                } else {
+                    NETWORK_RETRY_DELAY_MILLIS
+                },
+            )
             runCatching { ioWork() }
         } else {
             first
@@ -61,3 +73,6 @@ internal fun <T> CoroutineScope.runModuleRequest(
 
 /** 网络瞬时失败的静默重试间隔：短到用户几乎无感，长到足够让网络栈/Wi-Fi 关联完成。 */
 private const val NETWORK_RETRY_DELAY_MILLIS = 1_200L
+
+/** 撞上其他模块的教务 CAS 登录时的重试间隔：CAS 全链（登录页+提交+应用入口）通常 2~4 秒。 */
+private const val LOGIN_IN_PROGRESS_RETRY_DELAY_MILLIS = 3_000L

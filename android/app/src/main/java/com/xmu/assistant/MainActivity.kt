@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
     // 配对持久化，见 STATE_DEEP_LINK_SEQ 注释）。
     private var deepLinkSeq by mutableStateOf(1)
     // 长按图标「自动签到」快捷方式的开关请求序号：与 deepLinkSeq 同理用递增序号，
-    // 连续点同一条快捷方式也要每次都重新消费。
+    // 连续点同一条快捷方式也要每次都重新消费（「内容相等」判断会让第二次点击失效）。
     private var autoToggleSeq by mutableStateOf(0)
 
     private companion object {
@@ -78,6 +78,8 @@ class MainActivity : ComponentActivity() {
         //    减少用户打开成绩/课表页时的完整 CAS 认证链。绝不自动续登（mayRelogin 恒 false）。
         lifecycleScope.launch(Dispatchers.IO) {
             val warmSettings = runCatching { AssistantSettings(this@MainActivity) }.getOrNull()
+            // 长按图标的「自动签到」动态快捷方式：文案要随开关状态走，每次启动重下发一次。
+            // 放在设置预热之后（AssistantSettings 已就绪，不会触发 Keystore 首建）。
             AppShortcuts.update(applicationContext)
             ScheduleWidgetSyncWorker.scheduleDaily(applicationContext)
             // 旧版本生成的桌面快照没有课程色号，组件会回退课名散列，与 App 内的配色对不上。
@@ -263,13 +265,15 @@ fun XmuAssistantApp(
         return revision
     }
     LaunchedEffect(Unit) {
-        if (academicCache.courses.isEmpty() && academicCache.coursewareByCourse.isEmpty()) {
-            val initial = withContext(Dispatchers.IO) { academicCacheFromJson(settings.academicCacheJson) }
-            if (academicCache.courses.isEmpty() && academicCache.coursewareByCourse.isEmpty()) {
+        // 接纳前复核快照 revision：登出、换号与网络刷新（包括新的空结果）都会使在途启动读失效。
+        restoreAcademicCacheOnStartup(
+            currentCache = { academicCache },
+            readCacheJson = { settings.academicCacheJson },
+            applyCache = { initial ->
                 updateAcademicCache(initial)
                 courses = initial.courses
-            }
-        }
+            },
+        )
     }
     // 记住选中的课程 id（rememberSaveable：转屏/进程重建后恢复），课程对象从 courses 派生。
     // 不直接保存 CourseSummary，避免自定义 Saver，也保证课程列表刷新后仍能对应。
@@ -292,7 +296,7 @@ fun XmuAssistantApp(
     var monitorTransitionInProgress by remember { mutableStateOf(false) }
     var monitorTransitionId by remember { mutableStateOf(0L) }
     val requestGate = remember { RequestGate() }
-    // 外观主题模式（浅色/深色/跟随系统），用户可在「更多 → 通知与外观」切换
+    // 外观主题模式（浅色/深色/跟随系统），用户可在「更多 → 外观与通知」切换
     var themeMode by remember { mutableStateOf(settings.themeMode) }
     // 隐私模式（大标题逐字换字母、签到→举手、成绩→游戏点）。首帧用 prefs 值初始化全局状态，
     // 同时恢复用户自定义的换词规则与「标题是否替换」开关。
@@ -303,6 +307,7 @@ fun XmuAssistantApp(
         PrivacyModeState.set(settings.privacyMode)
         PrivacyModeState.loadRules(settings.privacyRules)
         PrivacyModeState.loadTitleMasked(settings.privacyTitleMasked)
+        PrivacyModeState.loadRankMasked(settings.privacyRankMasked)
         PrivacyModeState.enabled
     }
 
@@ -537,15 +542,18 @@ fun XmuAssistantApp(
         deleteRollcallHistoryCacheFile(activity)
         ScheduleWidgetData.clear(activity)
         settings.clearManualAcademicWeeks()
-        updateAcademicCache(null)
+        // 课程/课件缓存：先作废进程快照并等已准入的本地写结束，再清持久化，
+        // 否则旧任务的晚到写会在清除之后把旧账号课程写回去。
+        clearAcademicCachePersistence(
+            invalidateCache = { updateAcademicCache(null) },
+            clearCacheJson = { settings.academicCacheJson = "" },
+        )
         courses = emptyList()
         coursesLoading = false
         coursesRefreshError = ""
         selectedCourseId = null
         selectedCourseIds = emptyList()
         courseware.clearAll()
-        // 课程/课件缓存持久化同样清掉（与成绩清理对齐）：登出后重启不残留旧账号课程
-        settings.academicCacheJson = ""
         // 退出登录：清考试数据缓存与提醒（考试数据不含个人信息，但跟随账号会话）
         exam.clearAll()
         // 登出后立即刷新桌面小卡片落空态：仅清数据不刷新会让 widget 残留旧课表画面
@@ -701,8 +709,10 @@ fun XmuAssistantApp(
         }
         accountTransitionInProgress = true
         workScope.launchStartupSessionWork(onFinished = { recovery.finishAutoLogin(recoveryToken) }) {
-            // 冷启动时网络常处于关联中，首跳必抛 IOException。先等网络就绪，网络类失败
-            // 再退避重试一次；仍失败才按真实原因提示，不把网络抖动说成登录过期。
+            // 冷启动时默认网络常仍在关联（Wi-Fi 未就绪、校园网未认证）：这一发登录必然
+            // 抛 IOException，直接判失败会让首页闪一条「登录已过期，请手动登录」，而界面
+            // 之后又靠缓存照常可用 —— 纯误报。先等网络就绪（本地探测，不发请求，最多 3 秒），
+            // 网络类失败再退避重试一次；凭据错误/风控拦截不重试，该报的问题照报。
             awaitDefaultNetworkReady(activity, 3_000L)
             var attempt = runCatching { TronclassLogin().login(accountUsername, accountPassword) }
             if (attempt.exceptionOrNull()?.rootCause() is java.io.IOException &&
@@ -761,6 +771,8 @@ fun XmuAssistantApp(
                                 clearLoggedOutUi()
                             }
                             pendingModuleRefresh.clear()
+                            // 已退避重试过：此时仍失败是真问题，必须报出来。文案区分根因 ——
+                            // 网络类失败说「登录已过期」会把人往改密码上引，说的是错事。
                             showWarning(
                                 if (error.rootCause() is java.io.IOException) {
                                     "网络连接失败，未能自动续登，请稍后重试或手动登录"
@@ -968,22 +980,13 @@ fun XmuAssistantApp(
     var wasLoggedIn by remember { mutableStateOf(false) }
 
     /**
-     *冷启动首次刷新前等默认网络就绪（最多 4 秒，已就绪立即返回）。
+     *冷启动首次刷新前等默认网络真正可用（最多 4 秒，已可用立即返回）。
      * 刚开机时 Wi-Fi 常在关联中、校园网尚未认证，首个请求必然失败，而它紧跟着就会
      * 把「网络连接失败」顶到首页「自动签到」卡片下方。只在首次进入时等待，
-     * 之后的前台回切刷新不额外引入延迟。
+     * 之后的前台回切刷新不额外引入延迟。判据与自动续登共用（VALIDATED）。
      */
     suspend fun awaitStartupNetwork(timeoutMillis: Long = 4_000L) {
-        val manager = activity.getSystemService(ConnectivityManager::class.java) ?: return
-        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
-        while (SystemClock.elapsedRealtime() < deadline) {
-            val ready = runCatching {
-                val capabilities = manager.activeNetwork?.let(manager::getNetworkCapabilities)
-                capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            }.getOrDefault(false)
-            if (ready) return
-            kotlinx.coroutines.delay(300L)
-        }
+        awaitDefaultNetworkReady(activity, timeoutMillis)
     }
 
     fun refreshAllModulesOnEntry(force: Boolean = false, waitForNetwork: Boolean = false) {
@@ -1134,7 +1137,6 @@ fun XmuAssistantApp(
         workScope = workScope,
         homeActions = homeActions,
         page = page,
-        openedEventId = openedEventId,
         identity = IdentityUiState(username, password, loggedIn),
         setUsername = { username = it },
         setPassword = { password = it },
@@ -1219,9 +1221,13 @@ fun XmuAssistantApp(
 }
 
 /**
- * 冷启动等待默认网络具备 INTERNET 能力：只读 ConnectivityManager 状态，不发任何请求。
- * 自动续登前把「网络仍在关联」这段窗口等过去，避免首跳必然失败的 IOException
- * 被当成「登录已过期」。超时照常返回，由调用方按真实结果处理。
+ * 冷启动等待默认网络真正可用：只读 ConnectivityManager 状态，不发任何请求。
+ *
+ * 判据必须用 NET_CAPABILITY_VALIDATED（系统已确认该网络能出网），而不是
+ * NET_CAPABILITY_INTERNET —— 后者只表示「有网卡、配了默认路由」，Wi-Fi 刚关联、
+ * 校园网认证页未通过时同样满足，等待会立刻返回，首个请求照样失败。
+ * 自动续登/首刷前把这段窗口等过去，避免首跳必然失败的 IOException 被当成
+ * 「登录已过期」。超时照常返回，由调用方按真实结果处理。
  */
 private suspend fun awaitDefaultNetworkReady(activity: ComponentActivity, timeoutMillis: Long) {
     val manager = runCatching { activity.getSystemService(ConnectivityManager::class.java) }
@@ -1230,7 +1236,7 @@ private suspend fun awaitDefaultNetworkReady(activity: ComponentActivity, timeou
     while (SystemClock.elapsedRealtime() < deadline) {
         val ready = runCatching {
             manager.activeNetwork?.let(manager::getNetworkCapabilities)
-                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
         }.getOrDefault(false)
         if (ready) return
         delay(250L)

@@ -1,6 +1,5 @@
 package com.xmu.assistant
 
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -9,7 +8,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
 import android.os.Build
-import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
 import java.io.File
@@ -71,12 +69,12 @@ fun renderScoreLongImage(
     canvas.drawText("汇总", PADDING, y, headerPaint)
     y += LINE_HEIGHT
     canvas.drawText(
-        "平均绩点 ${scoreMetricText(summary.averageGpa)}    加权绩点 ${scoreMetricText(summary.weightedGpa)}",
+        "平均绩点 ${scoreMetricText(summary.averageGpa, 4)}    加权绩点 ${scoreMetricText(summary.weightedGpa, 4)}",
         PADDING, y, textPaint,
     )
     y += LINE_HEIGHT
     canvas.drawText(
-        "平均分数 ${scoreMetricText(summary.averageScore)}    加权分数 ${scoreMetricText(summary.weightedScore)}",
+        "平均分数 ${scoreMetricText(summary.averageScore, 4)}    加权分数 ${scoreMetricText(summary.weightedScore, 4)}",
         PADDING, y, textPaint,
     )
     y += LINE_HEIGHT
@@ -116,43 +114,16 @@ fun renderScoreLongImage(
 
 /**
  * 保存成绩长图并返回可分享的 content uri。
- * - Android 10+（API>=29）：写入系统相册（MediaStore，无需权限）。
+ * - Android 10+（API>=29）：写入统一导出目录「下载/xmu助手plus」（MediaStore，无需权限）。
  * - Android 8-9（API 26-28）：写入应用私有目录 files/images/，经 FileProvider 分享
  *（免 WRITE_EXTERNAL_STORAGE 运行时权限，避免旧系统上分享失败）。
  */
-fun saveScoreImageToGallery(context: Context, bitmap: Bitmap): Uri? {
+fun saveScoreImageToSharedFolder(context: Context, bitmap: Bitmap): Uri? {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        return saveToMediaStore(context, bitmap)
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        return ExportStorage.saveBitmap(context, "xmu成绩_$stamp.png", bitmap)
     }
     return saveToPrivateFile(context, bitmap)
-}
-
-private fun saveToMediaStore(context: Context, bitmap: Bitmap): Uri? {
-    val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-    val values = ContentValues().apply {
-        put(MediaStore.Images.Media.DISPLAY_NAME, "xmu成绩_$stamp.png")
-        put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/xmu助手")
-    }
-    val resolver = context.contentResolver
-    val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-        ?: return null
-    return try {
-        // openOutputStream 可能返回 null、compress 可能返回 false：两种失败都不能把
-        // 指向零字节图片的 uri 返回给分享方，且要删掉 MediaStore 残留的空记录
-        val written = resolver.openOutputStream(uri)?.use { output ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
-        } ?: false
-        if (written) {
-            uri
-        } else {
-            resolver.delete(uri, null, null)
-            null
-        }
-    } catch (_: Throwable) {
-        runCatching { resolver.delete(uri, null, null) }
-        null
-    }
 }
 
 private fun saveToPrivateFile(context: Context, bitmap: Bitmap): Uri? {

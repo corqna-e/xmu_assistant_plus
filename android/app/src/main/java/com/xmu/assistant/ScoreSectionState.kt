@@ -8,8 +8,17 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** 长图分享落盘节流窗口：窗口内且成绩未刷新时复用同一张图，不重复写文件。 */
+private const val SHARE_SAVE_WINDOW_MILLIS = 60_000L
+
+/** 分享面板拉起后多久提示保存目录（面板盖住的瞬间提示等于没提示）。 */
+private const val SHARE_LOCATION_HINT_DELAY_MILLIS = 800L
 
 /**
  * 成绩模块的独立分块：状态 + 动作（从 XmuAssistantApp 拆分，不引入 ViewModel）。
@@ -22,7 +31,7 @@ import kotlinx.coroutines.withContext
  *前同样校验 isCurrent（防登出/换号后旧账号 cookie 写回）。
  * - 存储依赖收窄为函数式注入（scoreCookieHeader/setScoreCookieHeader/scoreRecordsJson/
  *scoreUpdatedAtMillis）：组合侧绑定 AssistantSettings（加密 prefs），测试注入 fake。
- * - 风控约束：成绩刷新内部可能触发教务 CAS 续登（XmuScoreAutoQueryClient 内部续登），
+ * - 风控红线：成绩刷新内部可能触发教务 CAS 续登（XmuScoreAutoQueryClient 内部续登），
  *与 TronClass 手动登录并发会打两个身份域——入口检查 accountTransitionInProgress；
  *请求统一走 "scores" 互斥门（RequestGate）。
  * - 网络/IO 用注入的 scope（组合侧 rememberCoroutineScope，随 Activity 销毁取消），
@@ -53,6 +62,19 @@ internal class ScoreSectionState(
     private val persistenceDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val persistenceGate = LatestSnapshotWriteGate()
+
+    /**
+     * 长图分享节流：同一份成绩在 1 分钟内只落一次文件。
+     *
+     * 每次点分享都会生成新 PNG 落到公开目录，连点或反复分享会堆出一串几乎相同的图。
+     * 这里按「成绩快照版本 + 1 分钟窗口」复用上次写出的 uri：窗口内没刷新过成绩，
+     * 直接分享已有的那张；刷新成功后 [shareSnapshot] 递增，下一次分享必然重新生成
+     * ——成绩页刷新意味着内容可能变了，缓存图不能再拿去分享。
+     */
+    private var shareSnapshot = 0
+    private var lastShareAt = 0L
+    private var lastShareSnapshot = -1
+    private var lastShareUri: android.net.Uri? = null
 
     val ranking = RankSectionState(activity, requestGate, sessionEpoch, sessionOwner, scope,
         loggedIn, cookieHeader, username, password, accountTransitionInProgress,
@@ -98,15 +120,26 @@ internal class ScoreSectionState(
         loading = true
         val accountUsername = username()
         val accountPassword = password()
-        val session = sessionEpoch.snapshot(sessionOwner, cookieHeader())
         // client 建在 scope 外（B1 收尾）：成功/失败分支都要回写续登后的 cookie，
         // 原形态 client 建在 IO 协程内、跨 runCatching 边界；构造零 IO，经闭包传入。
-        val client = XmuScoreAutoQueryClient(
-            username = accountUsername,
-            password = accountPassword,
-            cookieHeader = scoreCookieHeader(),
-            mayRelogin = { sessionEpoch.isCurrent(session) },
-        )
+        // 构造本身可能抛异常（加密存储 / Keystore 异常），必须就地归还门，
+        // 否则 "scores" 门被永久占用、成绩刷新到重启前全部静默失效。
+        val sessionAndClient = try {
+            val session = sessionEpoch.snapshot(sessionOwner, cookieHeader())
+            session to XmuScoreAutoQueryClient(
+                username = accountUsername,
+                password = accountPassword,
+                cookieHeader = scoreCookieHeader(),
+                mayRelogin = { sessionEpoch.isCurrent(session) },
+            )
+        } catch (error: Exception) {
+            loading = false
+            requestGate.finish("scores")
+            refreshError = refreshFailureMessage(error)
+            showError("成绩读取失败：$refreshError")
+            return false
+        }
+        val (session, client) = sessionAndClient
         scope.runModuleRequest(
             requestGate = requestGate,
             gateKey = "scores",
@@ -127,6 +160,9 @@ internal class ScoreSectionState(
                     ranking.onScoresChanged(records, fetchResult.failedTermNames.isEmpty())
                     scoreRecords = records
                     updatedAtMillis = updatedAt
+                    // 成绩刷新后长图内容可能变化：作废上次分享缓存，下一次分享重新生成
+                    shareSnapshot++
+                    lastShareUri = null
                     show(
                         when {
                             records.isEmpty() -> "暂无成绩记录"
@@ -148,8 +184,14 @@ internal class ScoreSectionState(
                         persistSnapshot(session, client.cookieHeader(), validRecords, updatedAtMillis)
                     }
                     Log.e("XmuScoreDebug", "score refresh failed: ${error.javaClass.name}: ${error.message}", error)
-                    refreshError = refreshFailureMessage(error)
-                    showError("成绩读取失败：$refreshError")
+                    if (error is AcademicLoginInProgressException) {
+                        // 其他模块正在登录教务（冷启动首刷课表先起 CAS 登录最常见）：
+                        // 会话本身没问题，静默等下次刷新，绝不弹「教务登录已过期」。
+                        refreshError = ""
+                    } else {
+                        refreshError = refreshFailureMessage(error)
+                        showError("成绩读取失败：$refreshError")
+                    }
                 }
             },
             releaseLoading = { loading = false },
@@ -181,32 +223,89 @@ internal class ScoreSectionState(
         }
     }
 
-    /** 生成成绩长图并分享（后台生成位图，避免主线程卡顿；生成失败明确提示不崩溃）。 */
+    /** 生成成绩长图并分享；同一时刻只生成一张，旧会话或已销毁页面不再回填。 */
     fun shareLongImage() {
         val records = scoreRecords
         if (records.isEmpty()) {
             showWarning("请先刷新成绩")
             return
         }
-        scope.launch(Dispatchers.IO) {
+        // 1 分钟内、且成绩没刷新过：复用上次写出的那张图，不再落新文件。
+        // 分享失败（文件被用户在文件管理器里删掉等）才继续往下重新生成。
+        val cached = lastShareUri
+        if (cached != null && lastShareSnapshot == shareSnapshot &&
+            System.currentTimeMillis() - lastShareAt < SHARE_SAVE_WINDOW_MILLIS
+        ) {
+            val shared = runCatching { shareScoreImage(activity, cached) }
+            if (shared.isSuccess) {
+                notifySharedLocation()
+                return
+            }
+            lastShareUri = null
+        }
+        val snapshot = shareSnapshot
+        val session = sessionEpoch.snapshot(sessionOwner, cookieHeader())
+        // 连点不再重复渲染大位图；门由任务完成回调释放，启动前取消也不会占用。
+        if (!requestGate.tryStart("score_share")) return
+        scope.launchGatedRequest(requestGate, "score_share", Dispatchers.IO) {
+            currentCoroutineContext().ensureActive()
+            if (!sessionEpoch.isCurrent(session)) return@launchGatedRequest
             val bitmap = runCatching { renderScoreLongImage(records, xmuScoreSummary(records)) }
                 .getOrNull()
             if (bitmap == null) {
                 // 长图生成失败（超长成绩单 OOM 等）：明确提示，不崩溃
-                withContext(Dispatchers.Main) { show("成绩单过长，生成长图失败") }
-                return@launch
+                withContext(Dispatchers.Main) {
+                    if (sessionEpoch.isCurrent(session) && activityAlive()) show("成绩单过长，生成长图失败")
+                }
+                return@launchGatedRequest
             }
-            val uri = saveScoreImageToGallery(activity, bitmap)
-            bitmap.recycle()
+            val uri = try {
+                currentCoroutineContext().ensureActive()
+                if (!sessionEpoch.isCurrent(session)) return@launchGatedRequest
+                runCatching { saveScoreImageToSharedFolder(activity, bitmap) }
+                    .onFailure { Log.w("XmuScoreDebug", "成绩长图保存失败", it) }
+                    .getOrNull()
+            } finally {
+                bitmap.recycle()
+            }
             withContext(Dispatchers.Main) {
-                if (uri != null) {
-                    shareScoreImage(activity, uri)
-                } else {
+                if (!sessionEpoch.isCurrent(session) || !activityAlive()) return@withContext
+                if (uri == null) {
                     showError("生成成绩长图失败")
+                } else {
+                    // 只缓存本次真正落盘的那张；成绩已刷新（snapshot 变了）就不算数
+                    if (snapshot == shareSnapshot) {
+                        lastShareUri = uri
+                        lastShareSnapshot = snapshot
+                        lastShareAt = System.currentTimeMillis()
+                    }
+                    runCatching { shareScoreImage(activity, uri) }
+                        .onSuccess { notifySharedLocation() }
+                        .onFailure {
+                            Log.w("XmuScoreDebug", "成绩长图分享失败", it)
+                            showError("打开系统分享面板失败")
+                        }
                 }
             }
         }
     }
+
+    /**
+     * 分享面板拉起后延迟 0.8 秒提示落盘目录。
+     *
+     * 立刻弹会被系统分享面板盖住，用户根本看不到；等面板铺开再提示才读得到。
+     * 提示只说目录，不打断分享流程。
+     */
+    private fun notifySharedLocation() {
+        scope.launch {
+            delay(SHARE_LOCATION_HINT_DELAY_MILLIS)
+            withContext(Dispatchers.Main) {
+                if (activityAlive()) show("成绩长图已保存到 ${ExportStorage.describe()}")
+            }
+        }
+    }
+
+    private fun activityAlive(): Boolean = !activity.isFinishing && !activity.isDestroyed
 
     /** 会话失效时仅复位加载中标志（保留已展示数据，供 invalidateMainSessionUi 使用）。 */
     fun clearLoadingState() {
@@ -223,5 +322,10 @@ internal class ScoreSectionState(
         loading = false
         refreshError = ""
         updatedAtMillis = 0L
+        // 换号后旧的分享图属于上一个账号，不能复用
+        lastShareUri = null
+        lastShareAt = 0L
+        lastShareSnapshot = -1
+        shareSnapshot++
     }
 }

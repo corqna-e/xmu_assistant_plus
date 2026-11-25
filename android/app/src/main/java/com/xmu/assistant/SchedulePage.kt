@@ -1009,17 +1009,35 @@ private fun ScheduleAcademicHeader(
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             // 「第N周 · 本周」用与本日高亮一致的绿色，并可点击跳「设置 - 当前周次」；
             // 非本周仍是主色、不可点（此时文字是「第N周 · 非本周」，点进去没有校准意义）。
-            PrivacyText(
-                headline,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (selectedIsCurrent) AppSuccess else themePrimary(),
-                modifier = if (selectedIsCurrent) {
-                    Modifier.clickable(onClick = onWeekLabelClick)
-                } else {
-                    Modifier
-                },
-            )
+            // 本周时在标题旁放设置图标，让「可点进去校准周次」看得出来；文字与图标同色同热区。
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = if (selectedIsCurrent) Modifier.clickable(onClick = onWeekLabelClick) else Modifier,
+            ) {
+                PrivacyText(
+                    headline,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (selectedIsCurrent) AppSuccess else themePrimary(),
+                )
+                if (selectedIsCurrent) {
+                    // 图标外套同色细框，让「这里可点进设置」一眼看得出来。
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .border(1.dp, AppSuccess, RoundedCornerShape(4.dp)),
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_nav_settings),
+                            contentDescription = "修改当前周次",
+                            tint = AppSuccess,
+                            modifier = Modifier.size(13.dp),
+                        )
+                    }
+                }
+            }
             PrivacyText(supporting, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         // 刷新键由「框 + 文字」改为纯图标，减少窄屏占位。
@@ -1404,12 +1422,14 @@ private fun ScheduleAgendaView(
                 contentColor = if (active) Color.White else themePrimary(),
                 shape = RoundedCornerShape(999.dp),
                 modifier = Modifier
-                    .defaultMinSize(minHeight = 38.dp)
+                    // 星期胶囊整体按 90% 收：38→34dp、12/13→11/12dp、14/20sp→12.6/18sp。
+                    .defaultMinSize(minHeight = 34.dp)
                     .clickable { onDaySelected(weekday) },
             ) {
                 PrivacyText(
                     "周${xmuWeekdayShort(weekday)} $count",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 12.dp),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.6.sp, lineHeight = 18.sp),
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                 )
             }

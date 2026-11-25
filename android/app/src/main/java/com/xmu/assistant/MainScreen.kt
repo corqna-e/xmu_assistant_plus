@@ -130,7 +130,7 @@ internal fun rememberExamSection(
 }
 
 /**
- * 首页只读渲染态分组（参数收敛第一批，批次三·宁少勿破）：
+ * 首页只读渲染态分组：
  * 仅聚合「值语义」的展示输入；凡读写器成对的 stale-guard 参数组
  * （accountTransition 設置器、monitorTransition 全家、busyNow 读取器等）
  * 一律保持独立成对参数，不收拢以免破坏守卫语义。
@@ -208,7 +208,6 @@ internal fun MainScreen(
     workScope: CoroutineScope,
     homeActions: HomeActions,
     page: Page,
-    openedEventId: String,
     identity: IdentityUiState,
     setUsername: (String) -> Unit,
     setPassword: (String) -> Unit,
@@ -348,7 +347,7 @@ internal fun MainScreen(
         return true
     }
     // 自动签到的唯一写入口：首页卡片开关与长按图标快捷方式共用，行为不会两处漂移。
-    // stopMonitorWhenDisabled 仅快捷方式用：它的语义是「开关自动签到的同时启闭监控」，
+    // stopMonitorWhenDisabled 仅快捷方式用 —— 它的语义是「开关自动签到的同时启闭监控」，
     // 而首页开关按原设计只改策略、保留签到提醒。
     fun applyAutoAnswer(enabled: Boolean, stopMonitorWhenDisabled: Boolean = false) {
         val next = toggleAllAutoAnswer(rollcallSettings, enabled)
@@ -377,8 +376,8 @@ internal fun MainScreen(
     }
     // 长按图标「自动签到」快捷方式：进 App 后按当前状态取反执行。
     // 用序号消费（不是布尔值）：连点同一条快捷方式每次都要生效。
-    // consumed 走 rememberSaveable：重建时 intent 里的 extra 仍在，序号会被重新解析成 1，
-    // 若 consumed 归零就会把开关再翻一次。
+    // consumed 走 rememberSaveable：转屏重建时 intent 里的 extra 仍在，
+    // 序号会被重新解析成 1，若 consumed 归零就会把开关再翻一次。
     var consumedAutoToggleSeq by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(autoToggleSeq) {
         if (autoToggleSeq == 0 || autoToggleSeq <= consumedAutoToggleSeq) return@LaunchedEffect
@@ -421,12 +420,12 @@ internal fun MainScreen(
     }
 
     XmuMobileTheme(themeMode = themeMode) {
-        // 课件统一写公共「下载/xmu助手课件」，不需要授权目录。
+        // 课件统一写公共「下载/xmu助手plus」（与长图、证明 PDF 同目录），不需要授权目录。
         // 「打开下载目录」让系统文件管理器定位到主存储的 Download 目录；
         // 部分文件管理器不响应这个 Intent，给出可照抄的路径兜底提示。
         fun openCoursewareDownloadDirectory() {
             if (CoursewareStorage.openFolder(activity)) return
-            show("请在文件管理器里进入：${CoursewareStorage.describe(activity)}")
+            show("请在文件管理器里进入：${CoursewareStorage.describe()}")
         }
         val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
         val dark = LocalXmuDarkTheme.current
@@ -531,7 +530,6 @@ internal fun MainScreen(
                             }
                             Page.ROLLCALL -> RollcallStatusPage(
                                 events = rollcall.events,
-                                openedEventId = openedEventId,
                                 loading = rollcall.loading,
                                 refreshError = rollcall.refreshError,
                                 updatedAtMillis = rollcall.updatedAtMillis,
@@ -546,6 +544,9 @@ internal fun MainScreen(
                                     onModuleEntered(Page.COURSE_LOCATION)
                                 },
                                 forceAnswering = rollcall.forceAnswering,
+                                // 「立即进行当前签到」：不看策略、监控与自动签到开关，
+                                // 直接把进行中的签到提交掉；没有进行中的签到才按约定
+                                // 打开监控与自动签到。
                                 onForceAnswer = {
                                     rollcall.forceAnswerNow(
                                         onNoActive = {
@@ -597,6 +598,7 @@ internal fun MainScreen(
                                 onRefresh = { scores.refresh() },
                                 onShareScore = { scores.shareLongImage() },
                                 rankLabel = scores.ranking.label,
+                                overallRank = scores.ranking.overallPosition,
                                 onOpenRank = { onModuleEntered(Page.RANKING) },
                             )
                             Page.RANKING -> RankPage(scores.ranking) { onModuleEntered(Page.SCORES) }
@@ -661,6 +663,7 @@ internal fun MainScreen(
                                 prefetchRemaining = courseware.prefetchRemaining,
                                 downloadUiState = courseware.downloadUiState,
                                 downloadDirectoryPath = courseware.downloadDirectoryPath,
+                                downloadDirectoryAbsolutePath = courseware.downloadDirectoryAbsolutePath,
                                 onOpenDownloadDirectory = { openCoursewareDownloadDirectory() },
                                 onRetryFailed = courseware::retryFailed,
                                 onCheckLocalFiles = courseware::checkLocalFiles,
@@ -742,7 +745,7 @@ internal fun MainScreen(
                                             },
                                             onTest = testNotifications,
                                             // 桌面小组件设置从「策略」整体搬入本页。
-                                            // 总开关（widgetEnabled）自 已无实际作用，
+                                            // 总开关（widgetEnabled）已无实际作用，
                                             // 其回调与 UI 早已摘除，这里不再传 onWidgetToggle。
                                             onAddWidget = {
                                                 if (knownPinBlockedOem(activity)) {

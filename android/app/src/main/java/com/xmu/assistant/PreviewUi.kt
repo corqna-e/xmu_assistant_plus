@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- *方案一：统一卡片语言 —— 18dp 大圆角 + 极柔和阴影，取代 1dp 硬描边。
+ *统一卡片语言 —— 18dp 大圆角 + 极柔和阴影，取代 1dp 硬描边。
  * 卡片内的小块（指标、徽章）用 14dp 圆角且不加阴影，避免嵌套阴影显脏。
  */
 internal val AppCardShape = RoundedCornerShape(18.dp)

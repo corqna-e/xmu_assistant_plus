@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--根改为 FrameLayout（曾用于叠「课程详情」覆盖层）。
-     今日课程组件的点击查看明细已整体去掉，覆盖层删除；根仍是 FrameLayout，
+     v94：今日课程组件的点击查看明细已整体去掉，覆盖层删除；根仍是 FrameLayout，
      这样课程行 / 空态仍在同一层里排布，尺寸与内边距不变。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"

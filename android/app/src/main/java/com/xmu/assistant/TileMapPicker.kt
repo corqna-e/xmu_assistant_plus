@@ -97,7 +97,7 @@ private const val RETRY_COOLDOWN_MS = 4000L
 /** 注记层瓦片在缓存里的 key 前缀，与底图 key 区分。 */
 private const val LABEL_PREFIX = "L/"
 /**
- * 是否叠加 style=8 中文注记层。回到「无字版」：该层把灰字、
+ * 是否叠加 style=8 中文注记层。默认「无字版」：该层把灰字、
  * 棕路名、橙字餐饮、白字黑框楼栋名全烧在一张 PNG 里，样式互相打架且和高德 App
  * 不一致。底图(scl=2&style=7)本身完全不含文字，关掉后地图只剩道路/绿地/建筑轮廓。
  * 注记层加载与绘制逻辑全部保留，把这里改回 true 即可恢复带地名版本。
@@ -549,7 +549,7 @@ private fun Context.findHostActivity(): Activity? {
 }
 
 /**
- * 全屏选点对话框。窗口几何与底部 48dp 留白沿用 已真机验证过的写法
+ * 全屏选点对话框。窗口几何与底部 48dp 留白沿用已真机验证过的写法
  * （这台荣耀的 getRootWindowInsets 会返回 bottom=0，不能只靠系统 inset）。
  */
 @Composable

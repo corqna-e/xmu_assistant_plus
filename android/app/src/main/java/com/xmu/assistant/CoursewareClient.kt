@@ -125,7 +125,7 @@ class CoursewareClient private constructor(
             } catch (error: MainSessionExpiredException) {
                 // 真会话失效（401/登录页重定向）已被 getJson 确认：立即上抛触发续登，
                 // 不再串行打满其余端点白等（与 fetchCourseware 行为一致）；
-                // 减少未认证状态下的多余请求，同样符合风控约束。
+                // 减少未认证状态下的多余请求，同样符合风控红线。
                 throw error
             } catch (error: Throwable) {
                 errors.add("$endpoint: ${error.message}")
@@ -202,7 +202,7 @@ class CoursewareClient private constructor(
     }
 
     /**
-     * @param courseFolder 课程名+学期，公共下载目录内的子文件夹名；空串退回根目录（兼容测试与旧调用）。
+     * @param courseFolder 课程名+学期，公共下载目录内的子文件夹名；空串退回根目录（兼容旧调用）。
      */
     fun download(item: CoursewareUiItem, courseFolder: String = ""): String {
         val directory = downloadDirectory
@@ -211,7 +211,7 @@ class CoursewareClient private constructor(
                 // 得相对路径，后续 mkdirs/写入失败抛难定位异常——回落内部私有目录
                 checkNotNull(context).getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
                     ?: checkNotNull(context).filesDir,
-                "xmu助手课件",
+                EXPORT_FOLDER_NAME,
             )
         directory.mkdirs()
         return if (item.referenceId.isNotBlank()) {
@@ -348,9 +348,9 @@ class CoursewareClient private constructor(
     }
 
     /**
-     *唯一落点 = 公共「下载/xmu助手课件」。
+     *唯一落点 = 公共「下载/xmu助手plus」（与长图、证明 PDF 同一目录，按课程分子文件夹）。
      *
-     * 之前的逻辑是「有授权写授权目录、没授权写公共目录」，实机表现为同一次
+     * 此前的逻辑是「有授权写授权目录、没授权写公共目录」，实机表现为同一次
      * 下载的文件被劈成两处（授权文件夹一份、另一个新建的子文件夹一份），
      * 用户根本找不到。而 Android 10 起写公共下载目录本就不需要任何授权，
      * 也没有必要再让用户选目录：统一写公共目录，一处落点，无歧义。
@@ -365,7 +365,7 @@ class CoursewareClient private constructor(
             return
         }
         // 发布成功即删除中转文件（move 语义）。
-        // 旧实现只复制不删，每份课件都会在 Android/data/…/Download/xmu助手课件 里
+        // 旧实现只复制不删，每份课件都会在 Android/data/…/Download/ 里
         // 留一份永久副本，实测单机累积到 1 GB。发布失败才保留，方便原地重试。
         val published = CoursewareStorage.publishToPublicDownloads(ctx, file, courseFolder)
         if (!published) throw java.io.IOException("保存到公共下载目录失败，文件未保存")

@@ -20,7 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 
 /**
- * 隐私模式（重做）：
+ * 隐私模式：
  *
  * 1. 屏幕顶部大标题（[BrandHeader] 的标题）在二三级页逐字换成随机字母，
  *字母个数等于原标题字数（「课表」→ 两个随机字母）；一级页不遮蔽，首页显示「首页」。
@@ -28,7 +28,9 @@ import androidx.compose.ui.unit.TextUnit
  * 2. 全 App 任意位置的敏感词按 [PRIVACY_SUBSTITUTIONS] 换词（签到 → 前导、成绩 → 乘积、
  *监控 → 查看、雷达 → 类沓、考试 → 测评、考场 → 地点、排名 → 座位、绩点 → 机电、课 → ？），
  *桌面小组件（RemoteViews）不在范围内；
- * 3. 被改动的文字**配色与字重全部沿用原样式**，不做任何颜色/字号改动。
+ * 3. 被改动的文字**配色与字重全部沿用原样式**，不做任何颜色/字号改动；
+ * 4. 成绩页 rank 换成等长星号（41 → `**`），点一下可临时看真值；该遮蔽可在规则弹窗里
+ * 单独关闭（[PrivacyModeState.rankMasked]）。
  *
  * 实现方式：开关值走 [LocalPrivacyMode]，所有界面文本最终走 [PrivacyText]。
  * 开关落 [AssistantSettings.privacyMode]，内存副本在 [PrivacyModeState]。
@@ -86,6 +88,13 @@ internal object PrivacyModeState {
     var titleMasked by mutableStateOf(true)
         private set
 
+    /**
+     * 成绩页 rank 是否换成等长星号。默认开；关掉后隐私模式下也显示真实名次。
+     * 与换词规则、标题替换互不影响，读取即订阅。
+     */
+    var rankMasked by mutableStateOf(true)
+        private set
+
     fun set(value: Boolean) {
         enabled = value
     }
@@ -102,10 +111,19 @@ internal object PrivacyModeState {
         titleMasked = value
     }
 
-    /** 恢复默认：词表、标题替换开关与隐私总开关之外的选项一起回到出厂设置。 */
+    fun updateRankMasked(value: Boolean) {
+        rankMasked = value
+    }
+
+    fun loadRankMasked(value: Boolean) {
+        rankMasked = value
+    }
+
+    /** 恢复默认：词表、标题替换开关、排名星号开关与隐私总开关之外的选项一起回到出厂设置。 */
     fun resetRules() {
         rules = DEFAULT_PRIVACY_RULES
         titleMasked = true
+        rankMasked = true
     }
 
     /** 从 prefs 里的 JSON 恢复；解析失败或为空则回默认。 */
@@ -186,8 +204,22 @@ fun privacyTitle(title: String, privacy: Boolean): String {
 }
 
 /**
+ * 字面量标记：导出/下载的文件名、保存路径必须按真实名字显示，
+ * 隐私模式下不能被换词规则改掉，否则用户照着提示找不到文件。
+ *
+ * 用 [privacyLiteral] 包住的片段在本函数里原样输出，标记本身始终剔除。
+ * 选 Unicode 私用区字符，正常文案不会包含；不增加 Compose 参数，
+ * 因此从状态层拼出的 toast 文案也能带上文件名。
+ */
+private const val PRIVACY_LITERAL_START = '\uE000'
+private const val PRIVACY_LITERAL_END = '\uE001'
+
+internal fun privacyLiteral(text: String): String =
+    "$PRIVACY_LITERAL_START$text$PRIVACY_LITERAL_END"
+
+/**
  * 纯函数：按 [rules] 做敏感词替换（只认 enabled 且未被 [skipRules] 排除的词），
- * 关闭隐私或空串时原样返回。
+ * [privacyLiteral] 包住的字面量片段不参与替换；关闭隐私时只剔除标记、不改文字。
  */
 fun privacySubstituted(
     text: String,
@@ -195,12 +227,25 @@ fun privacySubstituted(
     rules: List<PrivacyRule> = PrivacyModeState.rules,
     skipRules: Set<String> = emptySet(),
 ): String {
-    if (!privacy || text.isEmpty()) return text
-    val active = rules.filter { it.enabled && it.to.isNotEmpty() && it.from !in skipRules }
-    if (active.isEmpty()) return text
+    if (text.isEmpty()) return text
+    val active = if (privacy) {
+        rules.filter { it.enabled && it.to.isNotEmpty() && it.from !in skipRules }
+    } else {
+        emptyList()
+    }
     val replaced = StringBuilder(text.length)
     var i = 0
+    var literal = false
     while (i < text.length) {
+        when (text[i]) {
+            PRIVACY_LITERAL_START -> { literal = true; i++; continue }
+            PRIVACY_LITERAL_END -> { literal = false; i++; continue }
+        }
+        if (literal || active.isEmpty()) {
+            replaced.append(text[i])
+            i++
+            continue
+        }
         val hit = active.firstOrNull { rule -> text.startsWith(rule.from, i) }
         if (hit != null) {
             replaced.append(hit.to)
@@ -241,56 +286,10 @@ fun PrivacyText(
     skipRules: Set<String> = emptySet(),
 ) {
     val privacy = LocalPrivacyMode.current
-    if (!privacy) {
-        androidx.compose.material3.Text(
-            text = text,
-            modifier = modifier,
-            color = color,
-            fontSize = fontSize,
-            fontStyle = fontStyle,
-            fontWeight = fontWeight,
-            fontFamily = fontFamily,
-            letterSpacing = letterSpacing,
-            textDecoration = textDecoration,
-            textAlign = textAlign,
-            lineHeight = lineHeight,
-            overflow = overflow,
-            softWrap = softWrap,
-            maxLines = maxLines,
-            minLines = minLines,
-            onTextLayout = onTextLayout,
-            style = style,
-        )
-        return
+    // privacySubstituted 同时剔除字面量标记：隐私关闭时也不会把控制字符漏到界面上。
+    val shown = remember(text, skipRules, privacy, PrivacyModeState.rules) {
+        privacySubstituted(text, privacy, PrivacyModeState.rules, skipRules)
     }
-
-    val shown = remember(text, skipRules, PrivacyModeState.rules) {
-        privacySubstituted(text, privacy = true, rules = PrivacyModeState.rules, skipRules = skipRules)
-    }
-    // 无替换时无需再走一遍组合，直接原样渲染。
-    if (shown == text) {
-        androidx.compose.material3.Text(
-            text = text,
-            modifier = modifier,
-            color = color,
-            fontSize = fontSize,
-            fontStyle = fontStyle,
-            fontWeight = fontWeight,
-            fontFamily = fontFamily,
-            letterSpacing = letterSpacing,
-            textDecoration = textDecoration,
-            textAlign = textAlign,
-            lineHeight = lineHeight,
-            overflow = overflow,
-            softWrap = softWrap,
-            maxLines = maxLines,
-            minLines = minLines,
-            onTextLayout = onTextLayout,
-            style = style,
-        )
-        return
-    }
-
     androidx.compose.material3.Text(
         text = shown,
         modifier = modifier,

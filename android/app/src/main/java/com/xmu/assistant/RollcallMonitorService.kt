@@ -243,7 +243,22 @@ class RollcallMonitorService : Service() {
                                 monitorWorkerCoordinator.runIfCurrent(token, settings.monitorDesired, action)
                             },
                             onNotify = { notifyRollcall(it) },
-                            onAnswer = engine::answer,
+                            // 与前台「立即签到」共用提交门：同一记录只写一次。
+                            // 拿到锁后再复核本次监控是否仍在跑、账号与签到设置是否未变，
+                            // 等待期间被停或换号就本地放弃，不发写请求、不消耗重试预算。
+                            onAnswer = { event ->
+                                RollcallAnswerGate.answerOnce(
+                                    accountId = settings.username,
+                                    cookieHeader = cookieSnapshot,
+                                    rollcallId = event.id,
+                                    canAnswer = {
+                                        isMonitorRunActive(token, settings) &&
+                                            settings.cookieHeader == cookieSnapshot &&
+                                            settings.rollcall() == rollcallSettings
+                                    },
+                                    answer = { engine.answer(event) },
+                                )
+                            },
                             onSuccess = settings::recordMonitorSuccess,
                             settingsStillCurrent = {
                                 settings.cookieHeader == cookieSnapshot && settings.rollcall() == rollcallSettings

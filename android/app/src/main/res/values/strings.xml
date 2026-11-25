@@ -19,7 +19,7 @@
     <string name="shortcut_schedule_long">查看课表</string>
     <string name="shortcut_courseware_short">下载课件</string>
     <string name="shortcut_courseware_long">下载课程课件</string>
-    <!--自动签到是动态快捷方式：文案随开关状态切换。 -->
+    <!--自动签到是动态快捷方式：文案随开关状态切换，关掉时点它等于重新开启。 -->
     <string name="shortcut_auto_enable_short">开启自动签到</string>
     <string name="shortcut_auto_enable_long">开启自动签到，同时启动签到监控</string>
     <string name="shortcut_auto_disable_short">关闭自动签到</string>

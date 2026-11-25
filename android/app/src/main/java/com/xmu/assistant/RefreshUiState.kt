@@ -14,6 +14,7 @@ fun refreshFailureMessage(error: Throwable): String {
         is ExamResponseException -> return "考试安排接口返回异常，请稍后重试"
         is ExamLoginInProgressException -> return "登录处理中，请稍候重试"
         is MainSessionExpiredException -> return "教务登录已过期，请重新登录后重试"
+        is AcademicLoginInProgressException -> return "教务登录处理中，请稍候重试"
         is AcademicLoginBlockedException -> return "教务登录请求过于频繁，请稍后再试（网络环境可能被临时限制）"
     }
     val message = error.message.orEmpty()

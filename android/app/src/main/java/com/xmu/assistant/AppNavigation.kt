@@ -92,10 +92,10 @@ internal val primaryDestinations = listOf(
 internal val moreDestinations = listOf(
     AppDestination(Page.COURSEWARE, "课程课件", R.drawable.ic_nav_folder, "批量下载课件"),
     AppDestination(Page.EXAMS, "考试安排", R.drawable.ic_nav_calendar, "考试时间与考场"),
-    AppDestination(Page.SCORES, "成绩", R.drawable.ic_nav_scores, "查询成绩与绩点 · 模拟成绩 · 专业排名"),
+    AppDestination(Page.SCORES, "成绩", R.drawable.ic_nav_scores, "查询成绩与绩点 · 模拟成绩 · 排名证明"),
     // 教评助手功能尚未添加，入口暂时保留但标记「开发中」且不跳转；下级界面代码保留。
     AppDestination(Page.EVALUATION, "教评助手", R.drawable.ic_nav_help, "教学评价入口与使用说明", statusLabel = "开发中"),
-    AppDestination(Page.NOTIFICATION, "通知与外观", R.drawable.ic_nav_bell, "通知渠道配置 · 主题外观 · 桌面小组件"),
+    AppDestination(Page.NOTIFICATION, "外观与通知", R.drawable.ic_nav_bell, "主题外观 · 通知渠道配置 · 桌面小组件"),
     AppDestination(Page.SETTINGS, "设置", R.drawable.ic_nav_settings, "签到策略 · 考试提醒 · 周次设置"),
     // 课程坐标是「设置」下的三级界面，不在更多页的分组中展示。
     AppDestination(Page.COURSE_LOCATION, "课程坐标", R.drawable.ic_nav_location, "维护雷达签到的课程地点"),
@@ -104,9 +104,19 @@ internal val moreDestinations = listOf(
     AppDestination(Page.TUTORIAL, "使用指南", R.drawable.ic_nav_help, "环境检查 · 使用准备 · 常见问题"),
 )
 
+/**
+ * 未挂在更多页分组上的二级页显示名。
+ *
+ * 页面 id 是深链/快捷方式与组件 PendingIntent 的契约值，不能跟着文案改名；
+ * 显示名单独放这里，避免改 id 造成入口静默失效。
+ */
+private val nestedPageTitles = mapOf(
+    Page.RANKING to "专业排名",
+)
+
 /** 页面大标题：更多页里的入口名与 BrandHeader 保持一致。未登记的页面回退到 id。 */
 internal fun pageTitle(page: Page): String =
-    moreDestinations.firstOrNull { it.page == page }?.label ?: page.id
+    nestedPageTitles[page] ?: moreDestinations.firstOrNull { it.page == page }?.label ?: page.id
 
 internal fun primaryPage(page: Page): Page =
     when {
@@ -313,7 +323,7 @@ internal fun MorePage(
 
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         // 删除页面大标题「校园工具」——两个分组小标题已足够表明页面结构，
-        // 与通知与外观等二级页一样，页面顶部直接从第一个分组标题开始。
+        // 与外观与通知等二级页一样，页面顶部直接从第一个分组标题开始。
         MoreSection(
             title = "学习工具",
             destinations = learning,

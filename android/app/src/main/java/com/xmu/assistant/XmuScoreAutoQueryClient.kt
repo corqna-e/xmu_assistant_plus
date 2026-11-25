@@ -300,13 +300,14 @@ class XmuScoreAutoQueryClient internal constructor(
 
     private fun loginAndGetToken() {
         // academic 域 CAS 登录跨模块单飞：成绩/课表/恢复共用同一把进程级门，
-        // 已在途则直接抛会话过期（上层走恢复），绝不同时打两个身份域登录。
+        // 已在途则本次请求作废（抛「登录处理中」，绝不判会话过期——冷启动首刷
+        // 课表正在登录时成绩紧接着撞门，旧实现会弹「教务登录已过期」）。
         if (!ProcessSessionRecovery.coordinator.tryStartAcademicCasLogin()) {
-            throw MainSessionExpiredException()
+            throw AcademicLoginInProgressException()
         }
         try {
             // 登录冷却（进程级）：服务端限流（登录页异常/登录失败）后短时间内不再尝试登录，
-            // 避免限流窗口内反复打 CAS 登录延长风控（体检：403 循环 bug 曾导致
+            // 避免限流窗口内反复打 CAS 登录延长风控（此前体检：403 循环 bug 曾导致
             // 同账号短时间 20+ 次登录被 ids 限流，登录页不再返回表单）。
             // 时间源用 System.nanoTime()：单调时钟（用户改系统时间无法绕过冷却，
             // 且 JVM 单测可用——SystemClock 在 JVM 抛 not mocked）。
@@ -413,7 +414,7 @@ class XmuScoreAutoQueryClient internal constructor(
 
     private fun postForm(url: String, body: String): String {
         val response = follow(url, method = "POST", body = body)
-        // 风控约束：只有「真会话失效」（401/403/重定向到统一登录域/登录页特征）才判过期触发续登；
+        // 风控红线：只有「真会话失效」（401/403/重定向到统一登录域/登录页特征）才判过期触发续登；
         // 5xx、非鉴权 4xx、服务端坏页一律归为格式异常（ScoreJsonFormatException），绝不触发 CAS 重登。
         if (response.isScoreSessionExpired()) throw ScoreSessionExpiredException()
         if (response.code !in 200..299) throw ScoreJsonFormatException("成绩接口暂时不可用")
@@ -421,12 +422,17 @@ class XmuScoreAutoQueryClient internal constructor(
     }
 
     private fun ScoreResponse.isScoreSessionExpired(): Boolean {
-        if (code == 401 || code == 403) return true
+        // 落点是否可信（教务/身份域）：认证网关常用 401 拦未认证设备，
+        // 通用「请先登录」字样也常见于校园网门户页，都不能当成教务会话过期。
+        val trustedHost = url.isBlank() || JwSessionMarkers.isAcademicHost(url)
+        if ((code == 401 || code == 403) && trustedHost) return true
         val finalUrl = url.lowercase(Locale.US)
         if ("ids.xmu.edu.cn" in finalUrl || "authserver/login" in finalUrl) return true
         val page = body.lowercase(Locale.US)
-        return page.trimStart().let { it.startsWith("<!doctype html") || it.startsWith("<html") } &&
-            listOf("pwdencryptsalt", "authserver/login", "ids.xmu.edu.cn", "请先登录", "未登录").any { it in page }
+        val looksLikeHtml = page.trimStart().let { it.startsWith("<!doctype html") || it.startsWith("<html") }
+        if (!looksLikeHtml) return false
+        if (listOf("pwdencryptsalt", "authserver/login", "ids.xmu.edu.cn").any { it in page }) return true
+        return listOf("请先登录", "未登录").any { it in page } && trustedHost
     }
 
     /** request/follow 模板收编于 JwHttpBase；终止域保持现状清单（未含 Keycloak，
@@ -496,8 +502,13 @@ class XmuScoreAutoQueryClient internal constructor(
         val finalUrl = url.lowercase(Locale.US)
         if ("ids.xmu.edu.cn" in finalUrl || "authserver/login" in finalUrl) return true
         val page = body.lowercase(Locale.US)
-        return page.trimStart().let { it.startsWith("<!doctype html") || it.startsWith("<html") } &&
-            listOf("pwdencryptsalt", "authserver/login", "请先登录", "未登录").any { it in page }
+        val looksLikeHtml = page.trimStart().let { it.startsWith("<!doctype html") || it.startsWith("<html") }
+        if (!looksLikeHtml) return false
+        if (listOf("pwdencryptsalt", "authserver/login", "ids.xmu.edu.cn").any { it in page }) return true
+        // 「请先登录/未登录」只认教务/身份域：认证门户页同样写这两句，
+        // 误判会让冷启动第一个请求就得出「登录已过期」。
+        val trustedHost = url.isBlank() || JwSessionMarkers.isAcademicHost(url)
+        return listOf("请先登录", "未登录").any { it in page } && trustedHost
     }
 
     private data class ScoreResponse(val url: String, val code: Int, val location: String?, val body: String)
@@ -582,6 +593,16 @@ internal data class ScoreFetchResult(
 )
 
 /**
+ * 教务 CAS 登录单飞门被占（其他模块的 academic 登录在途）。
+ *
+ * 与「会话过期」严格区分：此时凭据和会话都没问题，只是本次请求撞上了在途登录，
+ * 稍后重试即可。冷启动首刷多模块串行（课表/成绩/考试）时若把这种情况当成过期，
+ * 用户会看到「教务登录已过期」，而实际登录正在进行——这是误报的根因。
+ */
+internal class AcademicLoginInProgressException :
+    IllegalStateException("教务登录处理中，请稍候重试")
+
+/**
  * 登录页异常/被服务端拒绝（如限流提示页、验证码页、维护页——登录页缺少密码盐）。
  * 与"会话失效"严格区分：**绝不触发重试登录**（重试只会增加登录次数，延长风控；
  * 且空盐加密会抛误导性的 IllegalArgumentException）。
@@ -590,7 +611,7 @@ internal class AcademicLoginBlockedException(message: String = "教务登录请�
 
 /**
  * 成绩接口「真会话失效」（401/403/重定向到统一登录域/登录页特征）。
- * 与格式/网络异常严格区分：**只有它允许触发 academic CAS 续登**（风控约束：
+ * 与格式/网络异常严格区分：**只有它允许触发 academic CAS 续登**（风控红线：
  * 5xx、非鉴权 4xx、服务端坏页、网络抖动绝不重登）。
  */
 internal class ScoreSessionExpiredException : IllegalStateException("成绩接口登录态失效")

@@ -65,6 +65,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import android.widget.Toast
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
@@ -336,7 +337,7 @@ internal fun TutorialPage(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // 压掉 TextButton 的垂直内边距与 48dp 最小触摸下限（的
+                    // 压掉 TextButton 的垂直内边距与 48dp 最小触摸下限（
                     // LocalMinimumInteractiveComponentSize 姿势），行的上下空白改由
                     // 外层 top 16dp 与卡片底部留白（dp）控制。
                     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
@@ -360,7 +361,7 @@ internal fun TutorialPage(
         val steps = listOf(
             Triple("01", "登录校园账号", "在首页填写学号与密码完成登录；可选择在本机记住账号，便于后续一键切换。") to "首页",
             Triple("02", "完成运行环境检查", "逐项处理上方检查卡中标记为「待处理」与「需确认」的项目，全部通过后后台提醒才可靠。") to "",
-            Triple("03", "配置通知渠道", "在「通知与外观」中选择本机通知、微信 PushPlus 或邮箱，并发送测试通知确认可达。") to "通知",
+            Triple("03", "配置通知渠道", "在「外观与通知」中选择本机通知、微信 PushPlus 或邮箱，并发送测试通知确认可达。") to "通知",
             Triple("04", "启动签到监控", "在首页开启自动签到；轮询间隔与自动处理时机可在「设置 → 自动签到策略」中调整。") to "策略",
         )
         steps.forEach { (step, target) ->
@@ -385,13 +386,13 @@ internal fun TutorialPage(
         }
         val features = listOf(
             Triple(R.drawable.ic_nav_grid, "课表", "提供周课表与日程两种视图，可用右下角缩放条调整密度与字号；「调课」仅修改本机显示，可随时还原。"),
-            Triple(R.drawable.ic_nav_bell, "签到与自动处理", "按设定间隔轮询签到事件，数字签到、雷达签到等类型按策略提醒或自动处理；开启自动监控后仅在课程时段内运行，其余时间待机，签到记录在「签到」页查看。自动处理未能完成、或名单里无法确认本人状态时，会弹出需手动确认的提醒（同一场签到只提醒一次）。"),
+            Triple(R.drawable.ic_nav_bell, "签到与自动处理", "按设定间隔轮询签到事件，数字签到、雷达签到等类型按策略提醒或自动处理；开启自动监控后仅在课程时段内运行，其余时间待机，签到记录在「签到」页查看，正在进行的签到卡会显示本人的签到状态（已签、迟到、请假）。自动处理未能完成、或名单里无法确认本人状态时，会弹出需手动确认的提醒（同一场签到只提醒一次）。"),
             Triple(R.drawable.ic_nav_location, "课程坐标", "维护雷达签到的课程地点，可从校区地点中选择，也可地图选点或教室现场采点。"),
-            Triple(R.drawable.ic_nav_scores, "成绩与专业排名", "查询各学期成绩与绩点，支持模拟成绩预估与分享成绩长图；专业排名与绩点证明由成绩页进入。"),
-            Triple(R.drawable.ic_nav_folder, "课程课件", "按课程浏览与批量下载课件，统一保存到手机「下载 → xmu助手课件」文件夹，无需额外授权；平台未提供下载地址的资源仅保存入口。下载区的「检查」会扫描本机已下载的文件并补标为已下载；标记为已下载、本地却找不到文件的会显示「？已下载」，「取消」停止尚未开始的下载并清理未完成的残片。"),
+            Triple(R.drawable.ic_nav_scores, "成绩与专业排名", "查询各学期成绩与绩点，支持模拟成绩预估；成绩长图统一保存到「下载 → xmu助手plus」，页面底部显示入学以来（不含校选）的专业名次。绩点与专业排名证明由成绩页进入：选择计算范围提交申请，由教务统一计算后取回证明并解析名次，结果标注名次、人数与统计口径；证明文件可导出为 PDF，文件名标注范围与导出时间。"),
+            Triple(R.drawable.ic_nav_folder, "课程课件", "按课程浏览与批量下载课件，统一保存到手机「下载 → xmu助手plus」文件夹，无需额外授权；平台未提供下载地址的资源仅保存入口。未查看的新增课件排在最前，没有文件的课程收纳进「无文件课程」组、默认折叠。下载区的「检查本地」会扫描本机已下载的文件并补标为已下载；标记为已下载、本地却找不到文件的会显示「？已下载」；「取消」停止尚未开始的下载并清理未完成的残片。"),
             Triple(R.drawable.ic_nav_calendar, "考试安排与提醒", "查看考试时间与考场，可手动添加考试；可设置提前提醒分钟数与全屏提醒，准点触发依赖精确闹钟权限。"),
-            Triple(R.drawable.ic_nav_home, "桌面小组件", "今日课程小卡片与周课表小部件均在「通知与外观」页添加，添加后随课表数据自动刷新。"),
-            Triple(R.drawable.ic_nav_settings, "隐私模式", "在「通知与外观」开启后，页面文字随机替换为无意义内容以防旁人窥屏；桌面小组件不受影响。"),
+            Triple(R.drawable.ic_nav_home, "桌面小组件", "今日课程小卡片与周课表小部件均在「外观与通知」页添加，添加后随课表数据自动刷新。"),
+            Triple(R.drawable.ic_nav_settings, "隐私模式", "在「外观与通知」开启后，页面文字随机替换为无意义内容以防旁人窥屏；桌面小组件不受影响，课件与导出提示中的文件名保持原样以便查找，成绩页的排名数字显示为等长星号，点击数字可临时查看真实名次（可在隐私规则中关闭）。"),
         )
         features.forEach { (icon, title, description) ->
             PreviewCard {
@@ -411,6 +412,8 @@ internal fun TutorialPage(
             Triple(R.drawable.ic_nav_bell, "锁屏后收不到提醒", "系统会限制后台应用。请在本页检查卡中完成通知、电池优化、自启动与后台运行四项授权，并确认自动监控的时段设置正确。"),
             Triple(R.drawable.ic_nav_bell, "邮件或微信通知未送达", "请核对 SMTP 授权码、收件地址与端口，或 PushPlus Token；核对后发送测试通知验证。"),
             Triple(R.drawable.ic_nav_folder, "课件无法下载", "平台未提供下载地址时，应用不会绕过平台限制，仅保存入口并说明原因；请到平台端确认资源是否开放下载。"),
+            Triple(R.drawable.ic_nav_scores, "申请证明后排名没有变化", "排名由教务按批次统一计算，提交申请不会立即触发重算；已有证明会直接读取复用。成绩变化后重新提交绩点计算，排名才会随之更新。"),
+            Triple(R.drawable.ic_nav_folder, "旧课件文件夹中的文件无法识别", "更换安装来源后，系统限制应用读取旧目录「下载/xmu助手课件」，应用已改用「下载/xmu助手plus」；旧目录中的文件请在文件管理器中自行处理。"),
             Triple(R.drawable.ic_nav_location, "地图选点无法加载", "地图底图通过网络加载，空白时检查网络后重试；现场采点需要定位权限。"),
             Triple(R.drawable.ic_nav_calendar, "考试提醒不准时", "请确认已授予精确闹钟权限，且系统未对本应用启用省电限制；偏差较大时可在「考试提醒」页调整提前分钟数。"),
         )
@@ -505,7 +508,51 @@ internal fun NotificationSettingsPreviewPage(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        // 补小标题——「通知」与下方「外观」「桌面小组件」同级。
+        // 外观在前：主题模式与隐私模式属于显示类设置，先于通知渠道。
+        PreviewSectionHeader("外观")
+        PreviewCard {
+            SegmentedOptions(
+                options = listOf(THEME_MODE_SYSTEM to "跟随系统", THEME_MODE_LIGHT to "浅色", THEME_MODE_DARK to "深色"),
+                selected = themeMode,
+                onSelected = onThemeModeChanged,
+            )
+        }
+        PreviewCard {
+            // 隐私模式。开启后各页顶部大标题逐字换随机字母（个数等于原字数），
+            // 敏感词按 PRIVACY_SUBSTITUTIONS 换词，字体与配色保持不变。
+            // 说明文案按需求原样保留关键词，故本行屏蔽替换，否则「考」「课」「成绩」「签到」
+            // 会被自身规则改写、看不懂在讲什么。行尾问号图标点开全量替换规则。
+            var privacyRulesVisible by rememberSaveable { mutableStateOf(false) }
+            androidx.compose.runtime.CompositionLocalProvider(LocalPrivacyMode provides false) {
+                SettingSwitch(
+                    title = "隐私模式",
+                    subtitle = "将顶部大标题替换为乱码；将敏感词“考”“课”“成绩”“签到”替换为其他词。",
+                    checked = privacyMode,
+                    action = {
+                        Surface(
+                            onClick = { privacyRulesVisible = true },
+                            shape = CircleShape,
+                            color = themePrimarySoft(),
+                            modifier = Modifier.padding(end = 10.dp).size(20.dp),
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                PrivacyText(
+                                    "?",
+                                    color = themePrimary(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    },
+                    onChecked = onPrivacyModeChanged,
+                )
+                if (privacyRulesVisible) {
+                    PrivacyRulesDialog(settings) { privacyRulesVisible = false }
+                }
+            }
+        }
+        // 分组顺序：外观 → 通知 → 桌面小组件。
         PreviewSectionHeader("通知")
         PreviewCard {
             ChannelHeader(R.drawable.ic_nav_bell, "本机通知", "签到、监控异常与考试提醒", systemEnabled) { systemEnabled = it }
@@ -556,49 +603,6 @@ internal fun NotificationSettingsPreviewPage(
                     isError = invalidPorts,
                 )
                 OutlinedButton(onClick = { if (!invalidPorts) onTest(snapshot()) }, enabled = !invalidPorts, modifier = Modifier.fillMaxWidth()) { PrivacyText("发送测试通知") }
-            }
-        }
-        PreviewSectionHeader("外观")
-        PreviewCard {
-            SegmentedOptions(
-                options = listOf(THEME_MODE_SYSTEM to "跟随系统", THEME_MODE_LIGHT to "浅色", THEME_MODE_DARK to "深色"),
-                selected = themeMode,
-                onSelected = onThemeModeChanged,
-            )
-        }
-        PreviewCard {
-            // 隐私模式。开启后各页顶部大标题逐字换随机字母（个数等于原字数），
-            // 敏感词按 PRIVACY_SUBSTITUTIONS 换词，字体与配色保持不变。
-            // 说明文案按需求原样保留关键词，故本行屏蔽替换，否则「考」「课」「成绩」「签到」
-            // 会被自身规则改写、看不懂在讲什么。行尾问号图标点开全量替换规则。
-            var privacyRulesVisible by rememberSaveable { mutableStateOf(false) }
-            androidx.compose.runtime.CompositionLocalProvider(LocalPrivacyMode provides false) {
-                SettingSwitch(
-                    title = "隐私模式",
-                    subtitle = "将顶部大标题替换为乱码；将敏感词“考”“课”“成绩”“签到”替换为其他词。",
-                    checked = privacyMode,
-                    action = {
-                        Surface(
-                            onClick = { privacyRulesVisible = true },
-                            shape = CircleShape,
-                            color = themePrimarySoft(),
-                            modifier = Modifier.padding(end = 10.dp).size(20.dp),
-                        ) {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                PrivacyText(
-                                    "?",
-                                    color = themePrimary(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                        }
-                    },
-                    onChecked = onPrivacyModeChanged,
-                )
-                if (privacyRulesVisible) {
-                    PrivacyRulesDialog(settings) { privacyRulesVisible = false }
-                }
             }
         }
         // 从策略页搬入。只搬「小组件」相关，当前周次仍留在策略页。
@@ -774,7 +778,7 @@ internal fun StrategyPreviewPage(
             )
         }
         // 原「自动签到策略」的两张卡片已合并进三级界面，二级页只留入口；
-        // 按需求，本入口与「课程坐标」同归「签到设置」分组。
+        // 本入口与「课程坐标」同归「签到设置」分组。
         PreviewSectionHeader("签到设置")
         PreviewCard(onClick = onOpenAutoSignInStrategy) {
             PreviewListRow(
@@ -817,7 +821,7 @@ internal fun StrategyPreviewPage(
                 OutlinedButton(onClick = onOpenFullScreenSettings, modifier = Modifier.weight(1f)) { PrivacyText("全屏权限") }
             }
         }
-        // 分组改名「课表」；小组件部分已搬到「通知与外观」，此处只留当前周次。
+        // 分组改名「课表」；小组件部分已搬到「外观与通知」，此处只留当前周次。
         PreviewSectionHeader("课表")
         PreviewCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -860,6 +864,7 @@ private fun PrivacyRulesDialog(settings: AssistantSettings, onDismiss: () -> Uni
     androidx.compose.runtime.CompositionLocalProvider(LocalPrivacyMode provides false) {
         val rules = PrivacyModeState.rules
         val titleMasked = PrivacyModeState.titleMasked
+        val rankMasked = PrivacyModeState.rankMasked
         fun apply(next: List<PrivacyRule>) {
             PrivacyModeState.updateRules(next)
             settings.privacyRules = encodePrivacyRules(next)
@@ -894,6 +899,33 @@ private fun PrivacyRulesDialog(settings: AssistantSettings, onDismiss: () -> Uni
                             onCheckedChange = { on ->
                                 PrivacyModeState.updateTitleMasked(on)
                                 settings.privacyTitleMasked = on
+                            },
+                            modifier = Modifier.scale(0.85f),
+                        )
+                    }
+                    HorizontalDivider(
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f),
+                    )
+                    // 排名星号也单列：它同样是整块遮蔽（不是换词表里的词）。
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            PrivacyText(
+                                "不显示排名数字",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            PrivacyText(
+                                "只影响成绩页的 rank；点击可临时查看。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = rankMasked,
+                            onCheckedChange = { on ->
+                                PrivacyModeState.updateRankMasked(on)
+                                settings.privacyRankMasked = on
                             },
                             modifier = Modifier.scale(0.85f),
                         )
@@ -983,8 +1015,9 @@ private fun PrivacyRulesDialog(settings: AssistantSettings, onDismiss: () -> Uni
                     onClick = {
                         PrivacyModeState.resetRules()
                         settings.privacyRules = encodePrivacyRules(DEFAULT_PRIVACY_RULES)
-                        // 恢复默认连标题替换开关一起复位（resetRules 已置 true）。
+                        // 恢复默认连标题替换、排名星号开关一起复位（resetRules 已置 true）。
                         settings.privacyTitleMasked = true
+                        settings.privacyRankMasked = true
                     },
                 ) { PrivacyText("恢复默认") }
             },
@@ -1046,13 +1079,15 @@ internal fun CoursewarePreviewPage(
     // 常驻下载进度区所需的状态与「打开目录」回调；给默认值兼容旧调用点/单测。
     downloadUiState: CoursewareDownloadUiState = CoursewareDownloadUiState(),
     downloadDirectoryPath: String = "",
+    /** 真实路径，点「保存位置」时复制它；界面显示的仍是 [downloadDirectoryPath] 的说明文案。 */
+    downloadDirectoryAbsolutePath: String = "",
     onOpenDownloadDirectory: () -> Unit = {},
     onRetryFailed: () -> Unit = {},
     /**下载卡「检查」按钮：核对本地已落盘文件并补标记。 */
     onCheckLocalFiles: () -> Unit = {},
     /**下载卡「取消」按钮：停止尚未开始的下载并清理 .part。 */
     onCancelDownload: () -> Unit = {},
-    /**「检查」扫出来「标记为已下载、但本地找不到文件」的课件 id，角标据此换成「？已下载」。 */
+    /**「检查本地」扫出来「标记为已下载、但本地找不到文件」的课件 id，角标据此换成「？已下载」。 */
     missingLocalIds: Set<String> = emptySet(),
     /**提示条出现时下载键临时上让（内容区底边就是底栏上沿，不需要长期留 146dp）。 */
     toastVisible: Boolean = false,
@@ -1060,7 +1095,7 @@ internal fun CoursewarePreviewPage(
     val context = LocalContext.current
     // 已下载标记每次重组从落盘记录读取（下载状态变化会触发重组，及时刷新）。
     val downloadedIds = CoursewareStorage.downloadedIds(context)
-    // 课件统一写公共「下载/xmu助手课件」，无需选目录、无需授权，
+    // 课件统一写公共「下载/xmu助手plus」，无需选目录、无需授权，
     // 因此不再有「选择保存目录」的引导弹窗与授权状态机。
     val startDownload = {
         // 没勾课件时交给状态机提示「请先勾选课件」。
@@ -1071,6 +1106,8 @@ internal fun CoursewarePreviewPage(
     var collapsedTerms by remember { mutableStateOf(setOf<String>()) }
     // 课程行就地展开：右侧箭头展开/收起该课程的课件详情，与左侧勾选互不干扰。
     var expandedCourseIds by remember { mutableStateOf(setOf<String>()) }
+    // 0 条课件的课程按学期收进「无文件课程」组，默认折叠；键为学期名。
+    var expandedEmptyGroups by remember { mutableStateOf(setOf<String>()) }
     val filtered = courses.filter {
         query.isBlank() || it.displayName.contains(query, ignoreCase = true) ||
             it.term.contains(query, ignoreCase = true) ||
@@ -1092,7 +1129,8 @@ internal fun CoursewarePreviewPage(
         DownloadProgressPanel(
             state = downloadUiState,
             directoryPath = downloadDirectoryPath,
-            // 课件统一落在公共「下载/xmu助手课件」，这里直接打开该目录。
+            directoryAbsolutePath = downloadDirectoryAbsolutePath,
+            // 课件统一落在公共「下载/xmu助手plus」，这里直接打开该目录。
             onOpenDirectory = { onOpenDownloadDirectory() },
             onRetryFailed = onRetryFailed,
             directoryActionLabel = "打开下载目录",
@@ -1188,7 +1226,70 @@ internal fun CoursewarePreviewPage(
                             }
                         }
                         if (expanded) {
-                            termCourses.forEach { course ->
+                            // 0 条课件的课程收进「无文件课程」组，默认折叠。按是否有课件排序，
+                            // 空课程统一排到学期末尾，组头只在第一个空课程前出现；展开/折叠只
+                            // 影响这组，非空课程不受影响。组头沿用学期分组行的尺寸、圆角与
+                            // 两行文字，只用更淡的底色和次级文字色区分。
+                            val orderedCourses = termCourses.sortedBy { itemsForCourse(it.id).isEmpty() }
+                            val emptyGroupOpen = term in expandedEmptyGroups
+                            val emptyCourseCount = orderedCourses.count { itemsForCourse(it.id).isEmpty() }
+                            orderedCourses.forEachIndexed { index, course ->
+                                val isCourseEmpty = itemsForCourse(course.id).isEmpty()
+                                if (isCourseEmpty && (index == 0 || !itemsForCourse(orderedCourses[index - 1].id).isEmpty())) {
+                                    Surface(
+                                        onClick = {
+                                            expandedEmptyGroups = if (emptyGroupOpen) {
+                                                expandedEmptyGroups - term
+                                            } else {
+                                                expandedEmptyGroups + term
+                                            }
+                                        },
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        // 排版与课程行逐项对齐：箭头占 30dp（等同复选框宽度）并居中，
+                                        // 其后文字不再额外缩进；主标题用 bodyMedium、副标题 labelSmall，
+                                        // 与课程行同字号。只保留淡底与次级文字色作为分组辨识。
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+                                                PrivacyText(
+                                                    if (emptyGroupOpen) "▾" else "▸",
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            Column(Modifier.weight(1f)) {
+                                                PrivacyText(
+                                                    "无文件课程",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                                PrivacyText(
+                                                    "$emptyCourseCount 门课程 · 暂无课件",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                                                shape = RoundedCornerShape(7.dp),
+                                            ) {
+                                                PrivacyText(
+                                                    if (emptyGroupOpen) "收起" else "展开",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                if (isCourseEmpty && !emptyGroupOpen) return@forEachIndexed
                                 val courseItems = itemsForCourse(course.id)
                                 val pickedInCourse = courseItems.count { it.id in selectedIds }
                                 val courseToggleState = when {
@@ -1271,6 +1372,10 @@ internal fun CoursewarePreviewPage(
                             }
                             if (course.id in expandedCourseIds) {
                                 val courseItems = itemsForCourse(course.id)
+                                // 新增课件置顶：按「是否待看新增」稳定排序，其余条目保持原顺序。
+                                // 下载完成会从待看新增里移除，条目自然回到原位，不需要额外刷新。
+                                val pendingNewIds = CoursewareStorage.pendingNewIds(context, course.id)
+                                val orderedItems = courseItems.sortedByDescending { it.id in pendingNewIds }
                                 if (courseItems.isEmpty()) {
                                     PrivacyText(
                                         "该课程暂无已抓到的课件；勾选后点“刷新”读取。",
@@ -1287,7 +1392,7 @@ internal fun CoursewarePreviewPage(
                                         Modifier.padding(start = 30.dp, bottom = 4.dp),
                                         verticalArrangement = Arrangement.spacedBy(6.dp),
                                     ) {
-                                        courseItems.forEachIndexed { index, item ->
+                                        orderedItems.forEachIndexed { index, item ->
                                             if (index > 0) {
                                                 HorizontalDivider(
                                                     modifier = Modifier.padding(start = 12.dp, end = 29.dp),
@@ -1389,12 +1494,14 @@ internal fun CoursewarePreviewPage(
     }
 }
 
-/**课件页常驻下载区 —— 进度条 + 计数 + 保存位置 + 打开/复制路径。
+/**课件页常驻下载区 —— 进度条 + 计数 + 保存位置（可点复制）+ 打开下载目录。
  *进度条用自绘 Box，避免不同 Material3 版本 LinearProgressIndicator 参数差异。 */
 @Composable
 private fun DownloadProgressPanel(
     state: CoursewareDownloadUiState,
     directoryPath: String,
+    /** 复制用的真实路径；为空时退回 [directoryPath]。 */
+    directoryAbsolutePath: String = "",
     onOpenDirectory: () -> Unit,
     onRetryFailed: () -> Unit = {},
     directoryActionLabel: String = "打开下载目录",
@@ -1403,8 +1510,12 @@ private fun DownloadProgressPanel(
     /**下载中态的「取消」：停掉尚未开始的课件并清理 .part 残片。 */
     onCancelDownload: () -> Unit = {},
 ) {
+    val context = LocalContext.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-    PreviewCard(contentPadding = 12.dp, spacing = 6.dp) {
+    // 三段视觉间距按真机实测调平：标题行是 30dp 胶囊、按钮是 34dp 高+内边距，
+    // 两者文字墨迹到元素边缘的留白不同，等写 8dp 会出现「上窄下宽」。
+    // 标题→保存位置 12dp、保存位置→按钮 4dp，两段墨迹间隙实测相等。
+    PreviewCard(contentPadding = 12.dp, spacing = 0.dp) {
         // 状态徽标与右侧动作按钮统一为 30dp 高、至少 64dp 宽、同一套 labelSmall 粗体，
         // 避免「待下载」小胶囊和「检查 / 取消」描边按钮看起来像两种尺寸的控件。
         val pillModifier = Modifier
@@ -1437,7 +1548,7 @@ private fun DownloadProgressPanel(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         PrivacyText(
-                            if (state.active) "取消" else "检查",
+                            if (state.active) "取消" else "检查本地",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -1447,63 +1558,75 @@ private fun DownloadProgressPanel(
             }
         }
         if (state.total > 0) {
-            val fraction = (state.completed.toFloat() / state.total.coerceAtLeast(1)).coerceIn(0f, 1f)
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(999.dp)),
-            ) {
+            Spacer(Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val fraction = (state.completed.toFloat() / state.total.coerceAtLeast(1)).coerceIn(0f, 1f)
                 Box(
                     Modifier
-                        .fillMaxWidth(fraction)
+                        .fillMaxWidth()
                         .height(6.dp)
-                        .background(themePrimary(), RoundedCornerShape(999.dp)),
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(999.dp)),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(fraction)
+                            .height(6.dp)
+                            .background(themePrimary(), RoundedCornerShape(999.dp)),
+                    )
+                }
+                PrivacyText(
+                    "已完成 ${state.completed}/${state.total} · 文件 ${state.successFiles} · 入口 ${state.successEntries} · 失败 ${state.failed}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            PrivacyText(
-                "已完成 ${state.completed}/${state.total} · 文件 ${state.successFiles} · 入口 ${state.successEntries} · 失败 ${state.failed}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
         // 下载失败时把具体原因显示出来，并给一键重试入口。
         if (state.failed > 0) {
-            PrivacyText(
-                "最近失败原因：${state.lastFailureReason.ifBlank { "未返回具体原因" }}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (!state.active) {
-                OutlinedButton(
-                    onClick = onRetryFailed,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 34.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 3.dp),
-                ) { PrivacyText("重试失败的课件", style = MaterialTheme.typography.labelMedium) }
+            Spacer(Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                PrivacyText(
+                    "最近失败原因：${state.lastFailureReason.ifBlank { "未返回具体原因" }}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!state.active) {
+                    OutlinedButton(
+                        onClick = onRetryFailed,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 34.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 3.dp),
+                    ) { PrivacyText("重试失败的课件", style = MaterialTheme.typography.labelMedium) }
+                }
             }
         }
         if (directoryPath.isNotBlank()) {
+            Spacer(Modifier.height(12.dp))
+            // 路径本身就是用户最常要的东西：点这句话直接复制，不再单独占一个按钮。
             PrivacyText(
                 "保存位置：$directoryPath",
                 style = MaterialTheme.typography.labelSmall,
                 color = themePrimary(),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable {
+                    // 复制真实路径（/storage/emulated/0/Download/xmu助手plus），
+                    // 界面那句「我的文件 → 下载 → …」是给人读的说明，粘出去没法用。
+                    clipboard.setText(
+                        androidx.compose.ui.text.AnnotatedString(
+                            directoryAbsolutePath.ifBlank { directoryPath },
+                        ),
+                    )
+                    Toast.makeText(context, "已复制保存路径", Toast.LENGTH_SHORT).show()
+                },
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onOpenDirectory,
-                    modifier = Modifier.weight(1f).heightIn(min = 34.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 3.dp),
-                ) { PrivacyText(directoryActionLabel, style = MaterialTheme.typography.labelMedium) }
-                OutlinedButton(
-                    onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(directoryPath)) },
-                    modifier = Modifier.heightIn(min = 34.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 3.dp),
-                ) { PrivacyText("复制路径", style = MaterialTheme.typography.labelMedium) }
-            }
+            Spacer(Modifier.height(4.dp))
+            OutlinedButton(
+                onClick = onOpenDirectory,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 34.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 3.dp),
+            ) { PrivacyText(directoryActionLabel, style = MaterialTheme.typography.labelMedium) }
         }
     }
 }

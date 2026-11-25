@@ -93,7 +93,7 @@ internal object PermissionAudit {
         )
     }
 
-    // ---------- 自启动人工确认（改为落盘持久化） ----------
+    // ---------- 自启动人工确认（落盘持久化） ----------
     //
     // 自启动没有系统查询接口，只能由用户现场核对后确认。确认结果以前只存在页面内存里，
     // 每次重新进入本页（进程未变也会因 remember 重建）都要重新确认，实际使用时每次
@@ -169,7 +169,7 @@ internal object PermissionAudit {
     }
 
     /**
-     * 课件保存位置：课件统一写公共「下载/xmu助手课件」，无需任何授权，
+     * 课件保存位置：课件写公共下载目录，与长图、证明 PDF 统一到「下载/xmu助手plus」，无需任何授权，
      * 因此这一项不再有「待处理」状态，只需如实告知落点。
      */
     private fun storageEntry(context: Context): AuditEntry {
@@ -178,7 +178,7 @@ internal object PermissionAudit {
             key = "storage",
             title = "课件保存位置",
             summary = if (publicWritable) {
-                "课件保存到手机「下载 → xmu助手课件」，无需授权"
+                "课件保存到手机「下载 → xmu助手plus」，无需授权"
             } else {
                 "当前系统版本无法写入公共下载目录，课件保存在应用专属目录"
             },

@@ -31,8 +31,8 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
 
         private fun updateWidgets(context: Context, manager: AppWidgetManager, ids: IntArray) {
             val today = java.time.LocalDate.now()
-            // 考试（教务 + 自定义）也并入日程：投影只认课表，渲染前补一次，
-            // 今日列与明日预告都要带上。
+            // 考试（教务 + 自定义）也会并入日程：投影只认课表，这里在渲染前补上，
+            // 今日列与明日预告都要带上，否则考试只出现在 App 里。
             val (exams, customExams) = loadExamsForWidget(context)
             val snapshot = ScheduleWidgetData.load(context, today)?.withExams(exams, customExams)
             // 今日课程结束后要改显示明日课程，这里把明天的摘要一并取出。

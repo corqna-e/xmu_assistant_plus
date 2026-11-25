@@ -125,14 +125,22 @@ internal class RollcallSectionState(
         historyLoading = false
     }
 
-    /** 手动补签进行中（按钮置灰用）。 */
+    // ---- 手动「立即进行当前签到」 ----
+
+    /** 强制签到进行中：按钮据此置灰并显示「正在签到…」，同时防重复点击。 */
     var forceAnswering by mutableStateOf(false)
         private set
 
     /**
-     * 「立即进行当前签到」：不看自动签到策略、不看监控是否运行、不看开关，
-     * 直接拉列表并提交所有仍需要本人处理的签到。
-     * 点击时没有进行中的签到 → 回调 [onNoActive]，由 UI 侧打开监控与自动签到。
+     * 无视策略、监控与自动签到开关，把当前进行中的签到全部提交掉。
+     *
+     * 与自动监控只共用引擎，不复用 processRollcallMonitorPoll：那里有门槛、
+     * 开关、去重和轮询间隔，而这里是用户明确要求的「现在就签，签完为止」——
+     * 一次点击里「拉列表 → 提交 → 再拉列表」循环到没有待提交项为止。
+     * 数字码与雷达坐标仍走引擎既有逻辑：雷达没配课程坐标会明确报错，不猜位置。
+     *
+     * [onNoActive] 在「点击时就没有进行中的签到」时回调 —— 由 UI 侧去打开监控与
+     * 自动签到（那属于首页的开关状态，不在本模块里）。
      */
     fun forceAnswerNow(onNoActive: () -> Unit) {
         if (forceAnswering) return
@@ -148,7 +156,7 @@ internal class RollcallSectionState(
             requestGate = requestGate,
             gateKey = "rollcall_force",
             acceptsResult = { sessionEpoch.accepts(session, cookieHeader(), loggedIn()) },
-            ioWork = { forceAnswerAll(session.cookieHeader, accountId) },
+            ioWork = { forceAnswerAll(session, accountId) },
             onResult = { result ->
                 result.onSuccess { report ->
                     val unfinished = report.unfinished.entries.map { "${it.key}：${it.value}" }
@@ -161,7 +169,9 @@ internal class RollcallSectionState(
                         )
                         else -> showWarning("签到未完成：${unfinished.first()}")
                     }
+                    // 没有进行中的签到 → 打开监控与自动签到，由 UI 侧执行
                     if (!report.hadActive) onNoActive()
+                    // 结果如何都重拉一次列表，卡片状态与刚提交的结果对齐
                     refresh(showFeedback = false)
                 }
                 result.onFailure { error ->
@@ -178,12 +188,11 @@ internal class RollcallSectionState(
     }
 
     /**
-     * 「拉列表 → 提交 → 再拉列表」最多 [FORCE_ANSWER_MAX_ROUNDS] 轮：
-     * 平台回执有延迟，重拉仍会显示进行中，所以按「已提交过的 id 不再提交」收敛。
-     * 二维码等无法自动提交的类型如实记进 unfinished，不猜测。
+     * 一次点击把进行中的签到全部提交：拉列表 → 提交 → 再拉列表，直到没有待提交项。
+     * 已提交过的 id 不再提交（平台回执有延迟，重拉时仍可能显示进行中）。
      */
-    private fun forceAnswerAll(cookieHeader: String, accountId: String): ForceAnswerReport {
-        val engine = createEngine(cookieHeader)
+    private fun forceAnswerAll(session: SessionRequest, accountId: String): ForceAnswerReport {
+        val engine = createEngine(session.cookieHeader)
         var hadActive = false
         var answered = 0
         val handled = mutableSetOf<String>()
@@ -208,7 +217,16 @@ internal class RollcallSectionState(
                 while (!submitted && attempt < FORCE_ANSWER_ATTEMPTS) {
                     if (attempt > 0) Thread.sleep(FORCE_ANSWER_RETRY_GAP_MILLIS)
                     attempt += 1
-                    val outcome = runCatching { engine.answer(event) }
+                    val outcome = runCatching {
+                        // 与后台监控共用提交门：监控刚提交成功的同一条记录不再重复写。
+                        RollcallAnswerGate.answerOnce(
+                            accountId = accountId,
+                            cookieHeader = session.cookieHeader,
+                            rollcallId = event.id,
+                            canAnswer = { sessionEpoch.isCurrent(session) },
+                            answer = { engine.answer(event) },
+                        )
+                    }
                     submitted = outcome.getOrDefault(false)
                     if (!submitted) {
                         val error = outcome.exceptionOrNull()
@@ -217,6 +235,7 @@ internal class RollcallSectionState(
                             error != null -> friendlyMessage(error)
                             else -> engine.lastRadarFailure.orEmpty()
                         }
+                        // 本地校验失败（未配坐标/坐标无效）重试也不会变，直接收手
                         if (error is RollcallAnswerNotSubmittedException) break
                     }
                 }
@@ -229,6 +248,7 @@ internal class RollcallSectionState(
                     unfinished[label] = reason.ifBlank { "平台未确认提交结果" }
                 }
             }
+            // 一轮下来一条都没提交成功：平台拒绝/坐标缺失，再循环也是同样结果
             if (!progressed) break
         }
         return ForceAnswerReport(hadActive, answered, unfinished)
@@ -246,7 +266,7 @@ internal class RollcallSectionState(
         historyLoading = true
         val session = sessionEpoch.snapshot(sessionOwner, cookieHeader())
         val accountId = username()
-        scope.launch(Dispatchers.IO) {
+        scope.launchGatedRequest(requestGate, "rollcall_history") {
             try {
                 // SWR 缓存先行：IO 线程读盘 → 有缓存先上屏（含上次更新），
                 // 网络回包后原位覆盖；不学 ExamSectionState 构造期同步 IO
@@ -323,9 +343,11 @@ internal class RollcallSectionState(
                     }
                 }
             } finally {
-                // 门释放提到协程最外层（NonCancellable）：与 refresh() 同款防"门永久占用"
-                withContext(kotlinx.coroutines.NonCancellable) {
-                    requestGate.finish("rollcall_history")
+                // 取消时也要收起「核实中」：门已由任务完成回调统一释放，这里只做 UI 收尾。
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    if (sessionEpoch.accepts(session, cookieHeader(), loggedIn())) {
+                        historyLoading = false
+                    }
                 }
             }
         }

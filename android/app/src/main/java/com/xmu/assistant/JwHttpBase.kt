@@ -15,7 +15,7 @@ import java.util.Locale
  * - form urlEncode/post 编码（exam/schedule 同款 plain-URLEncoder 口径；score 的
  *encodeFormComponent 带 `*`→%2A 语义不同，保留在其客户端内不并入）。
  *
- * 网络口径约束：超时/UA/Referer/header 集/并发参数一律原值透传，本基座不改变任何
+ * 网络口径红线：超时/UA/Referer/header 集/并发参数一律原值透传，本基座不改变任何
  * 请求形态；异常类型由各客户端经 onLoginTerminus/onExhaustedNonLogin/networkWrapper
  * 注入原样工厂，不让异常语义跨模块串味。
  */
@@ -190,33 +190,54 @@ internal object JwSessionMarkers {
     /** score follow 终止域现状清单（未含 Keycloak：成绩链路语义冻结，逐字保持）。 */
     val SCORE_FOLLOW_TERMINATORS = setOf(IDS_DOMAIN, AUTHSERVER_LOGIN)
 
-    /** 登录页 HTML 特征词（exam.isLoginPage ≡ schedule.isAcademicLoginResponse 逐字合并）。 */
-    private val LOGIN_PAGE_MARKERS = listOf(
-        "pwdencryptsalt", "authserver/login", "ids.xmu.edu.cn", "请先登录", "未登录",
-    )
+    /** CAS 登录页结构词：统一身份登录页专有，任何主机命中都算会话失效。 */
+    private val CAS_PAGE_MARKERS = listOf("pwdencryptsalt", "authserver/login", "ids.xmu.edu.cn")
+
+    /** 通用登录提示词：校园网认证门户、运营商插页同样会写，必须结合主机判断。 */
+    private val GENERIC_LOGIN_MARKERS = listOf("请先登录", "未登录")
+
+    /** 教务/身份域主机：通用「请先登录」字样只有落在这里才代表教务会话失效。 */
+    private val ACADEMIC_HOSTS = listOf("jw.xmu.edu.cn", "ids.xmu.edu.cn", "c-identity.xmu.edu.cn")
+
+    /** 响应落点是否在教务/身份域。空 URL（无法判定）返回 false，调用方按「未知」处理。 */
+    fun isAcademicHost(url: String): Boolean {
+        if (url.isBlank()) return false
+        val host = runCatching { URL(url).host.lowercase(Locale.US) }.getOrNull() ?: return false
+        return ACADEMIC_HOSTS.any { host == it || host.endsWith(".$it") }
+    }
 
     /**
      * 登录页/身份域响应判定（401/403 状态码由各客户端薄封装补上）。
-     * 约束：合并只是消除三处实现漂移的可能，判定结果与各客户端
+     * 红线约束：合并只是消除三处实现漂移的可能，判定结果与各客户端
      * 改动前在其自有测试中的行为逐一一致——条件与清单逐字未动。
+     *
+     * 补：通用词（请先登录/未登录）必须落在教务/身份域主机上才算会话失效。
+     * 校外 Wi-Fi 未认证时请求被劫持到认证门户，门户页同样写着「请先登录」，
+     * 此前被判成会话过期，冷启动第一个请求就弹「教务登录已过期」。落点主机为空
+     * （无法判定）时保持旧行为，避免真实过期不再触发续登。
      */
     fun isAcademicLoginResponse(response: QueryHttpResponse): Boolean {
         val redirect = response.location.orEmpty().lowercase(Locale.US)
         if (IDS_DOMAIN in redirect || AUTHSERVER_LOGIN in redirect) return true
-        // HTML 页只有带登录页特征才算会话失效；普通服务端坏页/维护页/WAF 页不是
-        // （避免误触发 CAS 重登）。
         val page = response.body.lowercase(Locale.US)
-        return page.trimStart().let { it.startsWith("<!doctype html") || it.startsWith("<html") } &&
-            LOGIN_PAGE_MARKERS.any { it in page }
+        val looksLikeHtml = page.trimStart().let { it.startsWith("<!doctype html") || it.startsWith("<html") }
+        if (!looksLikeHtml) return false
+        if (CAS_PAGE_MARKERS.any { it in page }) return true
+        return GENERIC_LOGIN_MARKERS.any { it in page } &&
+            (response.url.isBlank() || isAcademicHost(response.url))
     }
 
     /**
      * 401/403 + 登录页复合会话失效判定（exam/schedule 原两处薄封装逐字等价合并）。
-     * 约束：仅消除两处复写的漂移面，条件本体（状态码集合 + 登录页分类器）逐字未动；
+     * 红线：仅消除两处复写的漂移面，条件本体（状态码集合 + 登录页分类器）逐字未动；
      * score 的 isScoreSessionExpired 是独立判定面，冻结不并入。
+     *
+     * 补：401/403 也要求落点不在外来页面（认证网关常用 401 拦未认证设备）。
      */
-    fun isAuthFailure(code: Int, response: QueryHttpResponse): Boolean =
-        code == 401 || code == 403 || isAcademicLoginResponse(response)
+    fun isAuthFailure(code: Int, response: QueryHttpResponse): Boolean {
+        val trustedHost = response.url.isBlank() || isAcademicHost(response.url)
+        return ((code == 401 || code == 403) && trustedHost) || isAcademicLoginResponse(response)
+    }
 }
 
 /**

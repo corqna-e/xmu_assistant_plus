@@ -162,6 +162,14 @@ class AssistantSettings private constructor(
         get() = prefs.getBoolean("privacy_title_masked", true)
         set(value) = prefs.edit().putBoolean("privacy_title_masked", value).apply()
 
+    /**
+     * 隐私模式下是否把成绩页的 rank 数字换成等长星号（默认开）。
+     * 关掉后排名按真实数字显示；开着时点一下数字仍可临时查看。属于显示偏好，非敏感数据。
+     */
+    var privacyRankMasked: Boolean
+        get() = prefs.getBoolean("privacy_rank_masked", true)
+        set(value) = prefs.edit().putBoolean("privacy_rank_masked", value).apply()
+
     /** 考试提醒总开关（默认关）。 */
     var examReminderEnabled: Boolean
         get() = prefs.getBoolean("exam_reminder_enabled", false)

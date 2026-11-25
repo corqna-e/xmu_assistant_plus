@@ -3,6 +3,7 @@ package com.xmu.assistant
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -133,9 +134,13 @@ internal class CoursewareSectionState(
     var downloadUiState by mutableStateOf(CoursewareDownloadUiState())
         private set
 
-    /**展示课件的保存位置（公共「下载/xmu助手课件」），不再涉及授权目录。 */
+    /**展示课件的保存位置（公共「下载/xmu助手plus」），不再涉及授权目录。 */
     val downloadDirectoryPath: String
-        get() = CoursewareStorage.describe(activity)
+        get() = CoursewareStorage.describe()
+
+    /** 真实路径：点「保存位置」时复制的是这个，不是上面那句说明文案。 */
+    val downloadDirectoryAbsolutePath: String
+        get() = CoursewareStorage.absolutePath(activity)
 
     private var downloadBatchSeq = 0
     private var activeDownloadBatches = 0
@@ -344,7 +349,9 @@ internal class CoursewareSectionState(
     /** 全选/取消全选（组合侧 CoursewarePage onSelectAll 委托）。 */
     fun toggleSelectAll() {
         val all = coursewareItems.map { it.id }.toSet()
-        if (selectedCoursewareIds.size == coursewareItems.size) {
+        // 用集合包含判断而不是比数量：部分勾选时数量可能巧合相等，
+        // 比数量会把「应全选」误判成「已全选」直接清空选择。
+        if (all.isNotEmpty() && all.all { it in selectedCoursewareIds }) {
             selectedCoursewareIds = emptySet()
             // 取消全选是用户明确意图，标记为手动取消，避免下一次 rebuild 又自动全选回来
             manuallyDeselectedIds = all
@@ -405,7 +412,7 @@ internal class CoursewareSectionState(
         coursewareDownloadProgress = "下载进度：下载中 ${targets.size} / 成功 0 / 失败 0"
         // 不再 setBusy(DOWNLOADING_COURSEWARE)；进度改由页面常驻进度区展示，
         // 底部 busy ToastBar 也不再长期占位。
-        scope.launch(Dispatchers.IO) {
+        scope.launchGatedRequest(requestGate, batchKey) {
             // 本批开始前先清掉过期断点残片（实测能堆到 72MB），再走正常下载。
             runCatching { CoursewareClient(activity, sessionCookie).pruneStalePartials() }
             val skipped = AtomicInteger(0)
@@ -576,7 +583,7 @@ internal class CoursewareSectionState(
                             }
                         }
                     }
-                    requestGate.finish(batchKey)
+                    // 门由 launchGatedRequest 的完成回调统一释放：启动前取消也能归还。
                 }
             }
         }
@@ -610,7 +617,7 @@ internal class CoursewareSectionState(
     }
 
     /**
-     * 「检查」：扫一遍本地目录，做两件事。
+     * 「检查本地」：扫一遍本地目录，做两件事。
      *
      * 1. 补标：下载过、但本机没记住标记的课件，本地有文件就补成「已下载」。
      * 2. 报缺：已经标记为已下载、本地目录却找不到文件的，记进 [missingLocalIds]，
@@ -633,7 +640,18 @@ internal class CoursewareSectionState(
         val downloaded = CoursewareStorage.downloadedIds(activity)
         val folderByCourse = academicCache().courses.associate { it.id to CoursewareStorage.courseFolderName(it) }
         scope.launch(Dispatchers.IO) {
-            val index = CoursewareStorage.localFileIndex(activity)
+            // 扫描失败不再静默吞掉（此前异常会让检查看起来"没反应"）：
+            // 把原因显示出来，并把扫到的文件数一起报给用户，便于判断是权限还是路径问题。
+            val scannedLocal = runCatching { CoursewareStorage.scanLocal(activity) }
+            val index = scannedLocal.map { it.index }.getOrDefault(emptyMap())
+            val scanned = scannedLocal.map { it.total }.getOrDefault(0)
+            // 报文件数用于自证：是 0 说明目录不存在或匹配规则不对，不是课件真被删了。
+            // 应用专属目录只在 Android 8/9 与下载中转时才会有文件，现代设备恒为 0，
+            // 平时不报它，免得让人以为文件被存到了应用里。
+            val detailCounts = scannedLocal.map { scan ->
+                if (scan.privateFolder > 0) "新目录 ${scan.newFolder}、应用目录 ${scan.privateFolder}"
+                else "新目录 ${scan.newFolder}"
+            }.getOrElse { "" }
             val presentIds = known.filter { item ->
                 val folder = folderByCourse[item.courseId].orEmpty()
                 localFileNames(item).any { CoursewareStorage.containsLocalFile(index, folder, it) }
@@ -650,6 +668,8 @@ internal class CoursewareSectionState(
             CoursewareStorage.setMissingLocalIds(activity, missing)
             val hitIds = result.hits
             val markedCount = known.count { it.id in downloaded }
+            val scanError = scannedLocal.exceptionOrNull()
+            val counts = if (detailCounts.isBlank()) "" else "（$detailCounts）"
             withContext(Dispatchers.Main) {
                 missingLocalIds = missing
                 if (hitIds.isNotEmpty()) {
@@ -658,12 +678,15 @@ internal class CoursewareSectionState(
                 }
                 show(
                     when {
+                        scanError != null ->
+                            "扫描本地目录失败：${scanError.message ?: scanError.javaClass.simpleName}"
                         hitIds.isNotEmpty() && missing.isNotEmpty() ->
-                            "已标记 ${hitIds.size} 项为已下载；另有 ${missing.size} 项标记为已下载但本地找不到文件"
-                        hitIds.isNotEmpty() -> "已标记 ${hitIds.size} 项为已下载"
-                        missing.isNotEmpty() -> "${missing.size} 项标记为已下载，但本地找不到文件"
-                        markedCount == 0 -> "本地未找到这些课件的文件"
-                        else -> "已下载的 $markedCount 项本地文件都在"
+                            "已标记 ${hitIds.size} 项；另有 ${missing.size} 项本地找不到$counts"
+                        hitIds.isNotEmpty() -> "已标记 ${hitIds.size} 项为已下载$counts"
+                        missing.isNotEmpty() -> "${missing.size} 项标记为已下载，但本地找不到文件$counts"
+                        scanned == 0 -> "本地没有扫到课件文件$counts"
+                        markedCount == 0 -> "没有可补标的课件，本地共 $scanned 个文件$counts"
+                        else -> "已下载的 $markedCount 项本地文件都在$counts"
                     },
                 )
             }

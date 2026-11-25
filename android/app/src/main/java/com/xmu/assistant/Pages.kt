@@ -49,13 +49,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-/**「立即进行当前签到」按钮底色：深蓝，与蓝色系导航图标同族。 */
+/** 「立即进行当前签到」按钮：固定深蓝底 + 白字，浅色/深色都用同一块色（与底栏选中蓝同源）。 */
 private val ImmediateSignInBlue = Color(0xFF23508C)
 
 @Composable
 internal fun RollcallStatusPage(
     events: List<RollcallEvent>,
-    openedEventId: String,
     loading: Boolean,
     refreshError: String,
     updatedAtMillis: Long,
@@ -66,7 +65,9 @@ internal fun RollcallStatusPage(
     loggedIn: Boolean = false,
     coordinateStore: RadarCoordinateStore? = null,
     onManageCoordinates: (String, String) -> Unit = { _, _ -> },
+    /** 手动强制签到的进行中标志（按钮据此置灰）。 */
     forceAnswering: Boolean = false,
+    /** 点「立即进行当前签到」：无视策略与开关，直接提交当前进行中的签到。 */
     onForceAnswer: () -> Unit = {},
     onRefresh: () -> Unit,
 ) {
@@ -99,13 +100,10 @@ internal fun RollcallStatusPage(
                 if (loading || historyLoading || refreshError.isNotBlank()) {
                     RefreshStateBanner(loading = loading || historyLoading, errorMessage = refreshError, hasData = events.isNotEmpty(), onRetry = onRefresh)
                 }
-                notificationEventLabel(openedEventId, events, historyItems)?.let { label ->
-                    PrivacyText(label, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                }
             }
         }
-        // 手动补签：不看策略与监控状态，直接处理进行中的签到；
-        // 没有进行中的签到则由上层打开监控与自动签到。
+        // 只要按钮本身，不另起卡片：通栏、蓝底白字，与上方卡片同宽同圆角。
+        // 它不看策略/监控/自动签到开关，点下去就提交当前进行中的签到。
         item {
             Button(
                 onClick = onForceAnswer,
@@ -179,7 +177,14 @@ private fun ActiveRollcallPreviewCard(
                 PrivacyText("发起人：${event.teacher}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             PreviewBadge(event.type)
-            PreviewBadge("进行中", PreviewBadgeTone.AMBER)
+            // 已签/迟到/请假后把「进行中」换成绿色终态徽标，否则看不出自己是否已签；
+            // ownStatus 拉取失败（null）或未签时维持「进行中」。
+            val own = event.ownStatus
+            if (own != null && isTerminalRollcallStatus(own)) {
+                PreviewBadge(own, PreviewBadgeTone.GREEN)
+            } else {
+                PreviewBadge("进行中", PreviewBadgeTone.AMBER)
+            }
         }
         if (event.type == "数字签到") {
             val progress = event.progress
@@ -271,6 +276,8 @@ fun ScorePage(
     onRefresh: () -> Unit,
     onShareScore: () -> Unit,
     rankLabel: String = "尚未获取",
+    /** 成绩页右下角显示的专业排名：固定「入学以来 · 不含校选」，未取过时为 null。 */
+    overallRank: Int? = null,
     onOpenRank: (() -> Unit)? = null,
 ) {
     var simulationRows by rememberSaveable(stateSaver = ScoreSimulationRowsSaver) {
@@ -320,7 +327,7 @@ fun ScorePage(
                         else "${records.size} 门",
                     )
                 }
-                if (records.isNotEmpty() || validSimulationCount > 0) ScoreSummaryPanel(summary)
+                if (records.isNotEmpty() || validSimulationCount > 0) ScoreSummaryPanel(summary, overallRank)
                 // FlowRow：宽屏下四件单行（「刷新成绩」weight 撑满余宽，观感同原 Row）；
                 // 窄屏放不下时自动换行，避免「刷新成绩」被挤压到文字裁切。
                 // weight 在 FlowRow 里只按行内余宽分配（320dp 下仅剩约 44dp，主按钮
@@ -349,12 +356,18 @@ fun ScorePage(
                 }
                 RefreshStateBanner(loading = loading, errorMessage = refreshError, hasData = records.isNotEmpty(), onRetry = onRefresh)
                 if (onOpenRank != null) {
-                    TextButton(onClick = onOpenRank, modifier = Modifier.fillMaxWidth()) { PrivacyText("专业排名与绩点证明 ›") }
+                    // 全页只留这一个入口。原先空态还额外插一张 RankEntry 卡片，
+                    // 成绩加载出来后卡片消失，看起来像同一功能闪了两下还变了样。
+                    TextButton(onClick = onOpenRank, modifier = Modifier.fillMaxWidth()) {
+                        PrivacyText(
+                            if (records.isEmpty() && !loading && rankLabel.isNotBlank()) "绩点与专业排名证明 · $rankLabel ›"
+                            else "绩点与专业排名证明 ›",
+                        )
+                    }
                 }
             }
         }
         if (records.isEmpty()) {
-            if (onOpenRank != null) item { RankEntry(rankLabel, onOpenRank) }
             item {
                 // 空态三档之「未登录」：登出后成绩清空时给出登录引导而非"暂无成绩"
                 if (!loggedIn) {
@@ -561,18 +574,6 @@ internal fun rememberSyncedBoolean(saved: Boolean): MutableState<Boolean> {
     val state = rememberSaveable { mutableStateOf(saved) }
     LaunchedEffect(saved) { state.value = saved }
     return state
-}
-
-internal fun notificationEventLabel(
-    openedEventId: String,
-    events: List<RollcallEvent>,
-    historyItems: List<RollcallHistoryItem>,
-): String? {
-    if (openedEventId.isBlank()) return null
-    val known = events.any { it.id == openedEventId } || historyItems.any { it.rollcallId == openedEventId }
-    if (!known) return "从通知打开的签到未在当前记录中"
-    val safeId = openedEventId.filterNot { it == '\r' || it == '\n' || it.isISOControl() }.take(64)
-    return "从通知打开：$safeId"
 }
 
 @Composable

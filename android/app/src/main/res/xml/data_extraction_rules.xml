@@ -31,7 +31,11 @@
         <exclude
             domain="sharedpref"
             path="xmu_assistant.xml" />
-        <!--外部课件下载目录：体积可达数百 MB，进云备份既超配额也无意义 -->
+        <!--外部统一导出目录（课件/长图/证明 PDF）：体积可达数百 MB，进云备份既超配额也无意义。
+             旧目录一并排除，避免历史文件被备份 -->
+        <exclude
+            domain="external"
+            path="Download/xmu助手plus" />
         <exclude
             domain="external"
             path="Download/xmu助手课件" />
@@ -61,6 +65,9 @@
         <exclude
             domain="sharedpref"
             path="xmu_assistant.xml" />
+        <exclude
+            domain="external"
+            path="Download/xmu助手plus" />
         <exclude
             domain="external"
             path="Download/xmu助手课件" />
